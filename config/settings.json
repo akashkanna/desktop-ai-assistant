@@ -1,0 +1,54 @@
+{
+  "assistant": {
+    "name": "Jarvis",
+    "wake_words": ["hey jarvis", "jarvis", "assistant", "start listening", "daddy home", "hello jarvis", "ok jarvis", "listen up", "wake up jarvis"],
+    "language": "en-US",
+    "auto_send_whatsapp": false,
+    "confirmation_required": true,
+    "confidence_threshold": 0.6,
+    "max_listen_seconds": 10,
+    "ambient_noise_duration": 1
+  },
+  "voice": {
+    "tts_engine": "pyttsx3",
+    "tts_rate": 175,
+    "tts_volume": 1.0,
+    "tts_voice_index": 0,
+    "edge_tts_voice": "en-US-AriaNeural",
+    "stt_engine": "google",
+    "stt_timeout": 5,
+    "stt_phrase_time_limit": 15
+  },
+  "ui": {
+    "theme": "dark",
+    "window_width": 1100,
+    "window_height": 720,
+    "accent_color": "#7C3AED",
+    "font_family": "Segoe UI",
+    "always_on_top": false,
+    "start_minimized": false
+  },
+  "automation": {
+    "browser": "chrome",
+    "whatsapp_web_url": "https://web.whatsapp.com",
+    "browser_driver_auto_install": true,
+    "action_delay": 0.5,
+    "typing_delay": 0.05,
+    "screenshot_dir": "screenshots"
+  },
+  "memory": {
+    "max_short_term_items": 50,
+    "session_summary_interval": 20,
+    "long_term_db": "memory/memory_store.json",
+    "log_actions": true
+  },
+  "safety": {
+    "require_confirmation_for": [
+      "send_whatsapp_message",
+      "delete_file",
+      "submit_form",
+      "close_application"
+    ],
+    "cancel_commands": ["cancel", "stop", "abort", "never mind", "forget it"]
+  }
+}
