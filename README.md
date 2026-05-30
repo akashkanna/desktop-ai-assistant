@@ -43,6 +43,75 @@ Ask Jarvis to find information or launch websites for you.
 
 ---
 
+## 🤖 Advanced AI Operating System Features
+Jarvis now includes more than direct command execution. It has a modular assistant layer designed for prediction, automation, memory, notifications, and safe task execution.
+
+### Predictive Assistance
+Jarvis learns from your habits and can suggest actions such as:
+* Frequently opened apps at this time of day
+* Preferred volume or night-mode adjustments after hours
+* Saved workflows for your daily routines
+
+Example:
+* "Good morning. You usually open VS Code, Chrome, and Spotify around this time. Would you like me to launch them?"
+
+### Automation Workflows
+Create custom workflow routines with voice triggers and execute them on demand.
+* "When I say Start Work: open VS Code, open Chrome, set volume to 30%"
+* "Run Start Work"
+* New workflow editor built into the desktop UI lets you add, run, and delete saved workflows directly from the side panel.
+* Use the voice workflow wizard to speak a new workflow phrase and have Jarvis automatically capture it.
+
+### Memory & Context System
+Jarvis can store personal preferences and automation settings across sessions.
+* User preferences
+* Favorite websites
+* Custom commands
+* Saved workflows
+* Device info
+
+Example:
+* "Remember that I prefer dark mode."
+* "Remember that VS Code is my default code editor."
+
+### Task Execution Monitor
+Tasks are tracked with live statuses:
+* pending
+* running
+* completed
+* failed
+* cancelled
+
+Example:
+* "What is the status of Install Python?"
+
+### Notification Intelligence
+Jarvis classifies alerts as:
+* info
+* warning
+* critical
+
+Example:
+* "Chrome update available."
+* "Bluetooth headset battery is low."
+
+### Plugin System
+Jarvis is now prepared to discover and load external plugins from the `plugins/` folder.
+Plugins can expose:
+* actions
+* status APIs
+* voice commands
+
+Example plugin ideas:
+* Spotify Controller
+* YouTube Controller
+* WhatsApp Controller
+* Discord Controller
+* OBS Controller
+* VS Code Controller
+
+---
+
 ## 🛑 Limitations (What Jarvis Cannot Do)
 
 While Jarvis is powerful, there are specific boundaries to its capabilities to ensure security and stability:

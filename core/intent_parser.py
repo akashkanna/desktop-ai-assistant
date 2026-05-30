@@ -157,7 +157,39 @@ INTENT_PATTERNS = [
      [r"click\s+(?:on\s+)?(?:the\s+)?(.+?)(?:\s+button)?$",
       r"press\s+(?:the\s+)?(.+?)(?:\s+button)?$"],
      ["element"]),
+    # ── Memory & workflows ─────────────────────────────────────────────
+    ("remember_preference",
+     [r"remember\s+that\s+(.+)",
+      r"remember\s+i\s+prefer\s+(.+)",
+      r"remember\s+my\s+(.+)"],
+     ["preference_value"]),
 
+    ("create_workflow",
+     [r"when\s+i\s+say\s+(.+):",
+      r"create\s+workflow\s+(.+):",
+      r"when\s+i\s+say\s+(.+)\s*:\s*(.+)"],
+     ["workflow_name"]),
+
+    ("run_workflow",
+     [r"(?:run|start|activate)\s+(?:workflow|routine|automation)\s+(.+)",
+      r"launch\s+workflow\s+(.+)"],
+     ["workflow_name"]),
+
+    ("list_workflows",
+     [r"(?:list|show|what\s+are)\s+(?:my\s+)?workflows",
+      r"what\s+automation\s+rules\s+do\s+i\s+have"],
+     []),
+
+    ("show_notifications",
+     [r"(?:show|list|check|what\s+are)\s+(?:my\s+)?notifications",
+      r"any\s+alerts\b"],
+     []),
+
+    ("task_status",
+     [r"what(?:'s|\s+is)\s+the\s+status\s+of\s+(.+)",
+      r"check\s+task\s+(.+)",
+      r"task\s+status\s+for\s+(.+)"],
+     ["task_name"]),
     # ── Open application (LAST — very broad pattern) ───────────────────
     ("open_application",
      [r"open\s+(.+)",
@@ -245,6 +277,35 @@ def _extract_entities(intent: str, match: re.Match, raw: str) -> dict:
 
     elif intent == "click_element":
         entities["element"] = groups[0] if groups else ""
+
+    elif intent == "remember_preference":
+        if groups:
+            entities["preference_value"] = groups[0]
+            entities["preference_key"] = "preferred_setting"
+            if "dark" in groups[0].lower() or "light" in groups[0].lower():
+                entities["preference_key"] = "preferred_theme"
+            elif "volume" in groups[0].lower() or "%" in groups[0].lower():
+                entities["preference_key"] = "preferred_volume"
+            elif "night" in groups[0].lower() or "brightness" in groups[0].lower():
+                entities["preference_key"] = "night_light_enabled"
+
+    elif intent == "create_workflow":
+        if len(groups) >= 1:
+            entities["workflow_name"] = groups[0]
+        if ":" in raw:
+            entities["workflow_definition"] = raw.split(":", 1)[1].strip()
+
+    elif intent == "run_workflow":
+        entities["workflow_name"] = groups[0] if groups else ""
+
+    elif intent == "list_workflows":
+        pass
+
+    elif intent == "show_notifications":
+        pass
+
+    elif intent == "task_status":
+        entities["task_name"] = groups[0] if groups else ""
 
     elif intent == "volume_control":
         raw_lower = raw.lower()

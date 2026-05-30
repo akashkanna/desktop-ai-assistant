@@ -15,10 +15,18 @@ DEFAULT_STORE = {
         "favorite_apps": [],
         "favorite_contacts": [],
         "auto_send_whatsapp": False,
-        "preferred_browser": "chrome"
+        "preferred_browser": "chrome",
+        "preferred_volume": None,
+        "preferred_theme": None,
+        "night_light_enabled": None
     },
     "frequent_apps": {},
     "frequent_contacts": {},
+    "favorite_websites": [],
+    "automation_rules": [],
+    "custom_commands": {},
+    "device_info": {},
+    "notifications": [],
     "session_summaries": [],
     "last_updated": None
 }
@@ -103,6 +111,65 @@ class LongTermMemory:
     def get_recent_summaries(self, n: int = 3) -> list:
         summaries = self._data.get("session_summaries", [])
         return summaries[-n:]
+
+    def add_workflow(self, workflow: dict):
+        workflows = self._data.setdefault("automation_rules", [])
+        existing = next((w for w in workflows if w["name"].lower() == workflow["name"].lower()), None)
+        if existing:
+            workflows.remove(existing)
+        workflows.append(workflow)
+        self.save()
+
+    def get_workflows(self) -> list:
+        return list(self._data.get("automation_rules", []))
+
+    def get_workflow(self, name: str) -> dict | None:
+        return next((w for w in self.get_workflows() if w["name"].lower() == name.lower()), None)
+
+    def remove_workflow(self, name: str) -> bool:
+        workflows = self._data.setdefault("automation_rules", [])
+        before = len(workflows)
+        self._data["automation_rules"] = [w for w in workflows if w["name"].lower() != name.lower()]
+        removed = len(workflows) != len(self._data["automation_rules"])
+        if removed:
+            self.save()
+        return removed
+
+    def add_custom_command(self, command_name: str, command_value: str):
+        custom = self._data.setdefault("custom_commands", {})
+        custom[command_name] = command_value
+        self.save()
+
+    def get_custom_commands(self) -> dict:
+        return dict(self._data.get("custom_commands", {}))
+
+    def add_favorite_website(self, website: str):
+        favorites = self._data.setdefault("favorite_websites", [])
+        if website not in favorites:
+            favorites.append(website)
+            self.save()
+
+    def get_favorite_websites(self) -> list:
+        return list(self._data.get("favorite_websites", []))
+
+    def record_device_info(self, key: str, value: Any):
+        info = self._data.setdefault("device_info", {})
+        info[key] = value
+        self.save()
+
+    def get_device_info(self, key: str, default: Any = None) -> Any:
+        return self._data.get("device_info", {}).get(key, default)
+
+    def add_notification(self, notification: dict):
+        notifications = self._data.setdefault("notifications", [])
+        notifications.append(notification)
+        self.save()
+
+    def get_notifications(self, category: str | None = None) -> list:
+        notifications = list(self._data.get("notifications", []))
+        if category:
+            return [n for n in notifications if n.get("category") == category]
+        return notifications
 
     def get_full_store(self) -> dict:
         return self._data

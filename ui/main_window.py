@@ -5,11 +5,12 @@ and a Responsive Desktop System Controls side panel.
 """
 import sys
 import os
+import threading
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLineEdit, QLabel, QScrollArea, QFrame,
     QSizePolicy, QGraphicsDropShadowEffect, QListWidget, QListWidgetItem,
-    QSlider, QSpacerItem
+    QSlider, QSpacerItem, QDialog, QTextEdit
 )
 from PySide6.QtCore import Qt, Signal, Slot, QPoint, QTimer, QSize
 from PySide6.QtGui import QFont, QColor, QIcon, QMouseEvent
@@ -100,6 +101,86 @@ class ChatBubble(QWidget):
             layout.addStretch()
 
 
+class WorkflowDialog(QDialog):
+    def __init__(self, controller, parent=None):
+        super().__init__(parent)
+        self.controller = controller
+        self.setWindowTitle("Create Workflow")
+        self.setFixedSize(420, 380)
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: {DARK_BG}; color: {TEXT_PRI}; }}
+            QLabel {{ color: {TEXT_PRI}; font-size: 13px; }}
+            QLineEdit, QTextEdit {{
+                background-color: {CARD_BG};
+                border: 1px solid {BORDER};
+                border-radius: 12px;
+                color: {TEXT_PRI};
+                padding: 10px;
+                font-size: 13px;
+            }}
+            QPushButton {{
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {ACCENT}, stop:1 {ACCENT2});
+                color: white;
+                border-radius: 14px;
+                padding: 10px 18px;
+                font-weight: 700;
+            }}
+            QPushButton:hover {{ opacity: 0.95; }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+
+        title = QLabel("Create a new workflow")
+        title.setStyleSheet("font-size: 16px; font-weight: 800;")
+        layout.addWidget(title)
+
+        layout.addWidget(QLabel("Workflow name"))
+        self.name_input = QLineEdit()
+        layout.addWidget(self.name_input)
+
+        layout.addWidget(QLabel("Workflow steps (one action per line)"))
+        self.definition_input = QTextEdit()
+        self.definition_input.setFixedHeight(160)
+        self.definition_input.setPlaceholderText("E.g. open chrome\nopen code\nset volume to 30%")
+        layout.addWidget(self.definition_input)
+
+        self.message_label = QLabel("")
+        self.message_label.setStyleSheet("color: #f87171;")
+        layout.addWidget(self.message_label)
+
+        button_row = QHBoxLayout()
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        button_row.addWidget(self.cancel_btn)
+
+        self.save_btn = QPushButton("Save Workflow")
+        self.save_btn.clicked.connect(self._on_save)
+        button_row.addWidget(self.save_btn)
+        layout.addLayout(button_row)
+
+    def _on_save(self):
+        name = self.name_input.text().strip()
+        steps_raw = self.definition_input.toPlainText().strip()
+        if not name:
+            self.message_label.setText("Please enter a workflow name.")
+            return
+        if not steps_raw:
+            self.message_label.setText("Please enter at least one workflow step.")
+            return
+
+        steps = [
+            {"text": step.strip()} for step in steps_raw.splitlines() if step.strip()
+        ]
+        if not steps:
+            self.message_label.setText("Please add valid workflow steps.")
+            return
+
+        self.controller.workflow_engine.create_workflow(name, steps, trigger=name)
+        self.accept()
+
+
 class MainWindow(FramelessWindow):
     sig_status      = Signal(str)
     sig_user_text   = Signal(str)
@@ -130,6 +211,8 @@ class MainWindow(FramelessWindow):
         self._init_system_controls()
 
         self.controller = AssistantController(ui_callback=self._controller_cb)
+        self._refresh_workflow_list()
+        self.workflow_editor_card.hide()
         QTimer.singleShot(800, self._auto_start)
 
     def _build_ui(self):
@@ -188,6 +271,12 @@ class MainWindow(FramelessWindow):
         
         title_layout.addStretch()
 
+        self.btn_toggle_workflow = QPushButton("⚙")
+        self.btn_toggle_workflow.setFixedSize(30, 30)
+        self.btn_toggle_workflow.clicked.connect(self._toggle_workflow_editor)
+        self.btn_toggle_workflow.setStyleSheet(f"QPushButton {{ background: transparent; color: {TEXT_SEC}; font-weight: bold; border-radius: 15px; }} QPushButton:hover {{ background: #ffffff11; }}")
+        title_layout.addWidget(self.btn_toggle_workflow)
+
         btn_min = QPushButton("─")
         btn_min.setFixedSize(30, 30)
         btn_min.clicked.connect(self.showMinimized)
@@ -230,6 +319,115 @@ class MainWindow(FramelessWindow):
         self.chat_list.setStyleSheet(f"QListWidget {{ background: transparent; border: none; outline: none; }}")
         self.chat_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         main_layout.addWidget(self.chat_list, stretch=1)
+
+        # Workflow Editor Panel (as floating window)
+        self.workflow_editor_card = QFrame()
+        self.workflow_editor_card.setWindowTitle("Workflow Editor")
+        self.workflow_editor_card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {CARD_BG};
+                border: 1px solid {BORDER};
+                border-radius: 0px;
+            }}
+            QLabel {{ color: {TEXT_PRI}; }}
+            QLineEdit, QTextEdit {{
+                background-color: {DARK_BG};
+                border: 1px solid {BORDER};
+                border-radius: 12px;
+                color: {TEXT_PRI};
+                padding: 10px;
+                font-size: 13px;
+            }}
+            QPushButton {{
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {ACCENT}, stop:1 {ACCENT2});
+                color: white;
+                border-radius: 14px;
+                padding: 10px 16px;
+                font-weight: 700;
+            }}
+            QPushButton:hover {{ opacity: 0.95; }}
+        """)
+        editor_layout = QVBoxLayout(self.workflow_editor_card)
+        editor_layout.setContentsMargins(16, 16, 16, 16)
+        editor_layout.setSpacing(12)
+
+        editor_header = QLabel("Workflow Editor")
+        editor_header.setStyleSheet("font-size: 15px; font-weight: 800;")
+        editor_layout.addWidget(editor_header)
+
+        # Saved Workflows List (compact)
+        workflow_list_label = QLabel("Saved Workflows")
+        workflow_list_label.setStyleSheet(f"color: {TEXT_SEC}; font-size: 11px; font-weight: 700;")
+        editor_layout.addWidget(workflow_list_label)
+
+        self.workflow_list = QListWidget()
+        self.workflow_list.setFixedHeight(90)
+        self.workflow_list.setStyleSheet(f"""
+            QListWidget {{ background-color: {DARK_BG}; border: 1px solid {BORDER}; border-radius: 12px; color: {TEXT_PRI}; }}
+            QListWidget::item {{ padding: 6px; }}
+            QListWidget::item:selected {{ background-color: {ACCENT}; color: white; }}
+        """)
+        self.workflow_list.itemSelectionChanged.connect(self._load_selected_workflow_into_editor)
+        editor_layout.addWidget(self.workflow_list)
+
+        # Form Fields Grid
+        form_grid = QHBoxLayout()
+        form_grid.setSpacing(12)
+
+        name_col = QVBoxLayout()
+        name_col.setSpacing(6)
+        name_col.addWidget(QLabel("Name"))
+        self.editor_name_input = QLineEdit()
+        self.editor_name_input.setPlaceholderText("e.g. Morning routine")
+        name_col.addWidget(self.editor_name_input)
+        form_grid.addLayout(name_col)
+
+        trigger_col = QVBoxLayout()
+        trigger_col.setSpacing(6)
+        trigger_col.addWidget(QLabel("Trigger phrase"))
+        self.editor_trigger_input = QLineEdit()
+        self.editor_trigger_input.setPlaceholderText("e.g. Start morning")
+        trigger_col.addWidget(self.editor_trigger_input)
+        form_grid.addLayout(trigger_col)
+
+        editor_layout.addLayout(form_grid)
+
+        # Steps Input
+        steps_label = QLabel("Steps (one action per line)")
+        steps_label.setStyleSheet(f"color: {TEXT_SEC}; font-size: 11px; font-weight: 700;")
+        editor_layout.addWidget(steps_label)
+
+        self.editor_steps_input = QTextEdit()
+        self.editor_steps_input.setFixedHeight(100)
+        self.editor_steps_input.setPlaceholderText("open chrome\nopen code\nset volume to 30%")
+        editor_layout.addWidget(self.editor_steps_input)
+
+        # Status
+        self.editor_status = QLabel("")
+        self.editor_status.setStyleSheet("color: #fbbf24; font-size: 11px;")
+        editor_layout.addWidget(self.editor_status)
+
+        # Button row
+        button_row = QHBoxLayout()
+        button_row.setSpacing(8)
+
+        self.editor_save_btn = QPushButton("Save")
+        self.editor_save_btn.clicked.connect(self._save_workflow_from_editor)
+        button_row.addWidget(self.editor_save_btn)
+
+        self.editor_run_btn = QPushButton("Run")
+        self.editor_run_btn.clicked.connect(self._run_selected_workflow)
+        button_row.addWidget(self.editor_run_btn)
+
+        self.editor_delete_btn = QPushButton("Delete")
+        self.editor_delete_btn.clicked.connect(self._delete_selected_workflow)
+        button_row.addWidget(self.editor_delete_btn)
+
+        self.editor_voice_btn = QPushButton("Voice Wizard")
+        self.editor_voice_btn.clicked.connect(self._start_workflow_voice_wizard)
+        button_row.addWidget(self.editor_voice_btn)
+
+        editor_layout.addLayout(button_row)
 
         # Input Area
         input_container = QWidget()
@@ -393,6 +591,31 @@ class MainWindow(FramelessWindow):
         self.btn_shutdown.clicked.connect(lambda: sys_ctrl.shutdown_system())
         side_layout.addWidget(self.btn_shutdown)
 
+        # Workflow editor section
+        workflow_header = QLabel("WORKFLOW ACTIONS")
+        workflow_header.setStyleSheet(f"color: {TEXT_SEC}; font-size: 11px; font-weight: 700; letter-spacing: 1px;")
+        side_layout.addWidget(workflow_header)
+
+        self.btn_workflow_new = QPushButton("＋ New Workflow")
+        self.btn_workflow_new.setStyleSheet(btn_style)
+        self.btn_workflow_new.clicked.connect(self._open_workflow_dialog)
+        side_layout.addWidget(self.btn_workflow_new)
+
+        self.btn_workflow_run = QPushButton("▶ Run Workflow")
+        self.btn_workflow_run.setStyleSheet(btn_style)
+        self.btn_workflow_run.clicked.connect(self._run_selected_workflow)
+        side_layout.addWidget(self.btn_workflow_run)
+
+        self.btn_workflow_delete = QPushButton("🗑 Delete Workflow")
+        self.btn_workflow_delete.setStyleSheet(btn_style)
+        self.btn_workflow_delete.clicked.connect(self._delete_selected_workflow)
+        side_layout.addWidget(self.btn_workflow_delete)
+
+        self.btn_workflow_voice = QPushButton("🎙 Voice Workflow Wizard")
+        self.btn_workflow_voice.setStyleSheet(btn_style)
+        self.btn_workflow_voice.clicked.connect(self._start_workflow_voice_wizard)
+        side_layout.addWidget(self.btn_workflow_voice)
+
         side_layout.addStretch()
         self.main_h_layout.addWidget(self.side_panel)
 
@@ -406,6 +629,21 @@ class MainWindow(FramelessWindow):
             elif self.width() >= 750 and not self.side_panel.isVisible():
                 self.side_panel.show()
                 self._side_panel_visible = True
+
+    def _toggle_workflow_editor(self):
+        if not hasattr(self, '_workflow_window_created'):
+            # Convert workflow_editor_card to a standalone window
+            self.workflow_editor_card.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
+            self.workflow_editor_card.setFixedSize(580, 560)
+            self.workflow_editor_card.move(100, 100)
+            self._workflow_window_created = True
+        
+        if self.workflow_editor_card.isVisible():
+            self.workflow_editor_card.hide()
+            self.btn_toggle_workflow.setStyleSheet(f"QPushButton {{ background: transparent; color: {TEXT_SEC}; font-weight: bold; border-radius: 15px; }} QPushButton:hover {{ background: #ffffff11; }}")
+        else:
+            self.workflow_editor_card.show()
+            self.btn_toggle_workflow.setStyleSheet(f"QPushButton {{ background: transparent; color: {ACCENT}; font-weight: bold; border-radius: 15px; }} QPushButton:hover {{ background: #ffffff11; }}")
 
     def _toggle_side_panel_manual(self):
         self._user_toggled_side = True
@@ -502,6 +740,7 @@ class MainWindow(FramelessWindow):
         if text:
             self.text_input.clear()
             self.controller.process_text_input(text)
+            self._refresh_workflow_list()
 
     def _toggle_listen(self):
         if self.controller.is_listening: self.controller.stop_listening()
@@ -517,6 +756,111 @@ class MainWindow(FramelessWindow):
         else:
             self.showMaximized()
             self.btn_max.setText("❐")
+
+    def _set_status_text(self, text: str, color: str = "#4ade80"):
+        self.status_label.setText(text)
+        self.status_label.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: 800; letter-spacing: 2px;")
+
+    def _open_workflow_dialog(self):
+        dialog = WorkflowDialog(self.controller, self)
+        if dialog.exec() == QDialog.Accepted:
+            self._refresh_workflow_list()
+            self._add_bubble("Workflow created! You can run it from the side panel or editor.", is_user=False)
+
+    def _run_selected_workflow(self):
+        item = self.workflow_list.currentItem()
+        if not item:
+            self._add_bubble("Please select a workflow to run.", is_user=False)
+            return
+        workflow_name = item.text().split(" — ")[0].strip()
+        self.controller.process_text_input(f"run workflow {workflow_name}")
+        self._refresh_workflow_list()
+
+    def _delete_selected_workflow(self):
+        item = self.workflow_list.currentItem()
+        if not item:
+            self._add_bubble("Please select a workflow to delete.", is_user=False)
+            return
+        workflow_name = item.text().split(" — ")[0].strip()
+        removed = self.controller.workflow_engine.remove_workflow(workflow_name)
+        if removed:
+            self._refresh_workflow_list()
+            self._add_bubble(f"Deleted workflow '{workflow_name}'.", is_user=False)
+            self.editor_status.setText("")
+        else:
+            self._add_bubble(f"Could not delete workflow '{workflow_name}'.", is_user=False)
+
+    def _load_selected_workflow_into_editor(self):
+        item = self.workflow_list.currentItem()
+        if not item:
+            return
+        workflow_name = item.text().split(" — ")[0].strip()
+        workflow = self.controller.workflow_engine.get_workflow(workflow_name)
+        if not workflow:
+            return
+        self.editor_name_input.setText(workflow.get("name", ""))
+        self.editor_trigger_input.setText(workflow.get("trigger", ""))
+        steps = workflow.get("steps", [])
+        self.editor_steps_input.setPlainText("\n".join(step.get("text", "") for step in steps if step.get("text")))
+        self.editor_status.setStyleSheet("color: #fbbf24; font-size: 12px;")
+        self.editor_status.setText(f"Loaded workflow '{workflow_name}'. Edit or run it below.")
+
+    def _save_workflow_from_editor(self):
+        name = self.editor_name_input.text().strip()
+        trigger = self.editor_trigger_input.text().strip()
+        steps_raw = self.editor_steps_input.toPlainText().strip()
+        if not name:
+            self.editor_status.setStyleSheet("color: #f87171; font-size: 12px;")
+            self.editor_status.setText("Please enter a workflow name.")
+            return
+        if not steps_raw:
+            self.editor_status.setStyleSheet("color: #f87171; font-size: 12px;")
+            self.editor_status.setText("Please enter at least one workflow step.")
+            return
+
+        steps = [{"text": step.strip()} for step in steps_raw.splitlines() if step.strip()]
+        if not steps:
+            self.editor_status.setStyleSheet("color: #f87171; font-size: 12px;")
+            self.editor_status.setText("Please add valid workflow steps.")
+            return
+
+        self.controller.workflow_engine.create_workflow(name, steps, trigger=trigger or name)
+        self._refresh_workflow_list()
+        self.editor_status.setStyleSheet("color: #4ade80; font-size: 12px;")
+        self.editor_status.setText(f"Workflow '{name}' saved.")
+
+    def _start_workflow_voice_wizard(self):
+        if getattr(self.controller, "is_listening", False):
+            self._add_bubble("Please stop the main voice listener before using workflow voice wizard.", is_user=False)
+            return
+
+        self.btn_workflow_voice.setEnabled(False)
+        QTimer.singleShot(0, lambda: self._set_status_text("LISTENING FOR WORKFLOW...", "#3b82f6"))
+        thread = threading.Thread(target=self._listen_for_workflow_phrase, daemon=True)
+        thread.start()
+
+    def _listen_for_workflow_phrase(self):
+        text = self.controller.stt.listen(timeout=10, phrase_time_limit=18)
+        if text:
+            QTimer.singleShot(0, lambda: self._add_bubble(f"Heard workflow: {text}", is_user=True))
+            self.controller.process_text_input(text)
+            QTimer.singleShot(0, self._refresh_workflow_list)
+        else:
+            QTimer.singleShot(0, lambda: self._add_bubble("Could not hear a workflow command. Try again.", is_user=False))
+        QTimer.singleShot(0, lambda: self.btn_workflow_voice.setEnabled(True))
+        QTimer.singleShot(0, lambda: self._on_status("idle"))
+
+    def _refresh_workflow_list(self):
+        if not hasattr(self, "workflow_list"):
+            return
+        self.workflow_list.clear()
+        if not getattr(self.controller, "workflow_engine", None):
+            return
+        for workflow in self.controller.workflow_engine.list_workflows():
+            trigger = workflow.get("trigger", "")
+            title = workflow["name"]
+            label = f"{title} — trigger: {trigger}" if trigger else title
+            self.workflow_list.addItem(label)
 
     def closeEvent(self, event):
         self.controller.stop_listening()
