@@ -22,7 +22,7 @@ def test_open_application_url_opens_browser():
 
     try:
         launcher = AppLauncher(config_path=tmp_path)
-        with patch("automation.app_launcher.webbrowser.open") as mock_browser:
+        with patch("webbrowser.open") as mock_browser:
             result = launcher.open_application("GitHub")
 
         mock_browser.assert_called_once_with("https://github.com")

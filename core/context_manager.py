@@ -57,7 +57,7 @@ class ContextManager:
 
         # --- Repeat last intent ---
         if intent == "repeat_last":
-            parsed = self._rebuild_from_last()
+            return self._rebuild_from_last()
 
         parsed.entities = entities
         return parsed

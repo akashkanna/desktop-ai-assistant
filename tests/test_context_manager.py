@@ -19,42 +19,41 @@ from unittest.mock import MagicMock
 class TestShortTermMemory:
     def test_add_exchange(self):
         stm = ShortTermMemory()
-        stm.add_exchange("open chrome", "Opening Chrome.", {"intent": "open_application"})
-        history = stm.get_recent_history(5)
+        stm.add_to_history("user", "open chrome", intent="open_application")
+        history = stm.get_history(5)
         assert len(history) == 1
-        assert history[0]["user"] == "open chrome"
+        assert history[0]["text"] == "open chrome"
+        assert history[0]["intent"] == "open_application"
 
     def test_entity_tracking(self):
         stm = ShortTermMemory()
-        stm.update_last_entities({
-            "intent": "send_whatsapp_message",
-            "entities": {"contact": "Rahul", "message": "Hello"}
-        })
+        stm.update_context(last_contact="Rahul", last_message="Hello")
         assert stm.last_contact == "Rahul"
         assert stm.last_message == "Hello"
 
     def test_pending_confirmation(self):
         stm = ShortTermMemory()
         action = {"intent": "send_whatsapp_message", "entities": {}}
-        stm.set_pending_confirmation(action)
-        assert stm.pending_confirmation is not None
-        stm.clear_pending_confirmation()
+        stm.pending_confirmation = action
+        stm.is_awaiting_response = True
+        assert stm.pending_confirmation == action
+        stm.reset_confirmation()
         assert stm.pending_confirmation is None
 
     def test_context_summary(self):
         stm = ShortTermMemory()
         stm.last_contact = "Mom"
         stm.last_app = "Chrome"
-        summary = stm.get_context_summary()
-        assert "Mom" in summary
-        assert "Chrome" in summary
+        snapshot = stm.get_context_snapshot()
+        assert snapshot["last_contact"] == "Mom"
+        assert snapshot["last_app"] == "Chrome"
 
     def test_max_history(self):
-        stm = ShortTermMemory(max_history=3)
+        stm = ShortTermMemory(max_items=3)
         for i in range(5):
-            stm.add_exchange(f"cmd {i}", f"response {i}")
-        history = stm.get_recent_history(10)
-        assert len(history) == 3  # Capped at max_history
+            stm.add_to_history("user", f"cmd {i}")
+        history = stm.get_history(10)
+        assert len(history) == 3  # Capped at max_items
 
 
 class TestLongTermMemory:
@@ -65,9 +64,9 @@ class TestLongTermMemory:
             path = f.name
 
         ltm = LongTermMemory(store_path=path)
-        ltm.set("last_contact", "TestUser")
+        ltm.set_preference("favorite_apps", ["TestApp"])
         ltm2 = LongTermMemory(store_path=path)
-        assert ltm2.get("last_contact") == "TestUser"
+        assert ltm2.get_preference("favorite_apps") == ["TestApp"]
         os.unlink(path)
 
     def test_frequency_tracking(self):
@@ -77,12 +76,12 @@ class TestLongTermMemory:
             path = f.name
 
         ltm = LongTermMemory(store_path=path)
-        ltm.increment_app_usage("chrome")
-        ltm.increment_app_usage("chrome")
-        ltm.increment_app_usage("vscode")
+        ltm.record_app_usage("chrome")
+        ltm.record_app_usage("chrome")
+        ltm.record_app_usage("vscode")
         top = ltm.get_top_apps(2)
-        assert top[0][0] == "chrome"
-        assert top[0][1] == 2
+        assert top[0] == "chrome"
+        assert top[1] == "vscode"
         os.unlink(path)
 
 
