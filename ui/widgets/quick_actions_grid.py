@@ -83,7 +83,15 @@ class QuickActionsGrid(QFrame):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        cols = 4 if self.width() >= 320 else (2 if self.width() >= 180 else 1)
+        width = self.width()
+        if width >= 720:
+            cols = 4
+        elif width >= 560:
+            cols = 3
+        elif width >= 360:
+            cols = 2
+        else:
+            cols = 1
         if cols != self._cols:
             self._cols = cols
             self._relayout()

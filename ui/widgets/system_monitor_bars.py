@@ -16,7 +16,8 @@ class MetricBar(QWidget):
         self._color = color
         self._value = 0.0
         self._display = 0.0
-        self.setFixedHeight(36)
+        self.setMinimumHeight(32)
+        self.setMaximumHeight(48)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self._anim = QPropertyAnimation(self, b"display_value")
@@ -73,17 +74,17 @@ class SystemMonitorBars(QFrame):
         layout.setSpacing(10)
         layout.addWidget(SectionHeader("System Monitor"))
 
-        grid = QGridLayout()
-        grid.setSpacing(8)
+        self._monitor_grid = QGridLayout()
+        self._monitor_grid.setContentsMargins(0, 0, 0, 0)
+        self._monitor_grid.setSpacing(8)
         self.cpu_bar = MetricBar("CPU Usage", Colors.NEON_BLUE)
         self.ram_bar = MetricBar("RAM Usage", Colors.NEON_PURPLE)
         self.gpu_bar = MetricBar("GPU Usage", Colors.NEON_CYAN)
         self.disk_bar = MetricBar("Disk Usage", Colors.NEON_ORANGE)
         self.net_bar = MetricBar("Network", Colors.NEON_GREEN)
-        bars = [self.cpu_bar, self.ram_bar, self.gpu_bar, self.disk_bar, self.net_bar]
-        for i, bar in enumerate(bars):
-            grid.addWidget(bar, i // 2, i % 2)
-        layout.addLayout(grid)
+        self._bars = [self.cpu_bar, self.ram_bar, self.gpu_bar, self.disk_bar, self.net_bar]
+        self._arrange_bars(2)
+        layout.addLayout(self._monitor_grid)
 
         status = QHBoxLayout()
         self.mic_lbl = QLabel("🎤 Mic: OK")
@@ -113,3 +114,15 @@ class SystemMonitorBars(QFrame):
             f"{metrics.os_name}  ·  {metrics.cpu_name}  ·  "
             f"{metrics.ram_total_gb} GB RAM  ·  Uptime {metrics.uptime}"
         )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._arrange_bars(1 if self.width() < 620 else 2)
+
+    def _arrange_bars(self, columns: int):
+        while self._monitor_grid.count():
+            item = self._monitor_grid.takeAt(0)
+            if item.widget():
+                self._monitor_grid.removeWidget(item.widget())
+        for idx, bar in enumerate(self._bars):
+            self._monitor_grid.addWidget(bar, idx // columns, idx % columns)

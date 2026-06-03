@@ -42,8 +42,8 @@ class TimelineItem(QFrame):
         outer.addLayout(rail)
 
         body = QVBoxLayout()
-        body.setContentsMargins(10, 4, 8, 10)
-        body.setSpacing(2)
+        body.setContentsMargins(12, 10, 12, 10)
+        body.setSpacing(4)
         head = QLabel(f"{icon}  {title}")
         head.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: 800;")
         msg = QLabel(entry.message)
@@ -55,6 +55,7 @@ class TimelineItem(QFrame):
         body.addWidget(msg)
         body.addWidget(time)
         outer.addLayout(body, stretch=1)
+        self.setStyleSheet("background: rgba(15, 25, 45, 0.35); border-radius: 14px;")
 
 
 class ActivityTimeline(QFrame):
@@ -74,9 +75,10 @@ class ActivityTimeline(QFrame):
         scroll.setStyleSheet("background: transparent; border: none;")
 
         self._container = QWidget()
+        self._container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._list = QVBoxLayout(self._container)
         self._list.setContentsMargins(0, 0, 0, 0)
-        self._list.setSpacing(4)
+        self._list.setSpacing(10)
         self._empty = QLabel("No activity yet")
         self._empty.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-size: 12px; padding: 12px;")
         self._list.addWidget(self._empty)

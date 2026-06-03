@@ -38,7 +38,8 @@ class CommandDock(QFrame):
         row1.setSpacing(12)
 
         self.mic_btn = QPushButton("🎤")
-        self.mic_btn.setFixedSize(52, 52)
+        self.mic_btn.setMinimumSize(48, 48)
+        self.mic_btn.setMaximumSize(64, 64)
         self.mic_btn.setCursor(Qt.PointingHandCursor)
         self.mic_btn.clicked.connect(self.listen_toggled.emit)
         self._listening = False
@@ -52,7 +53,9 @@ class CommandDock(QFrame):
             f"color: {Colors.NEON_BLUE}; font-size: 12px; font-weight: 800;"
         )
         self.waveform = WaveformWidget(bar_count=36)
-        self.waveform.setFixedHeight(24)
+        self.waveform.setMinimumHeight(20)
+        self.waveform.setMaximumHeight(32)
+        self.waveform.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         wave_col.addWidget(self.status_label)
         wave_col.addWidget(self.waveform)
         row1.addLayout(wave_col, stretch=1)
@@ -62,7 +65,8 @@ class CommandDock(QFrame):
         self.chat_input.setMinimumHeight(40)
         self.chat_input.returnPressed.connect(self._submit)
         self.send_btn = QPushButton("➤")
-        self.send_btn.setFixedSize(40, 40)
+        self.send_btn.setMinimumSize(40, 40)
+        self.send_btn.setMaximumSize(60, 60)
         self.send_btn.setStyleSheet(ThemeManager.gradient_button())
         self.send_btn.clicked.connect(self._submit)
         row1.addWidget(self.chat_input, stretch=2)

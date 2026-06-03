@@ -29,13 +29,11 @@ class DashboardPage(QScrollArea):
         root.setSpacing(12)
 
         # ── HERO BAND: AI Core + Status Panel ──
-        hero_band = QHBoxLayout()
-        hero_band.setSpacing(12)
         self.hero = AiCoreHero()
         self.ai_status = AiCoreStatusPanel(registry)
-        hero_band.addWidget(self.hero, stretch=5)
-        hero_band.addWidget(self.ai_status, stretch=2)
-        root.addLayout(hero_band)
+        hero_band = ResponsiveColumns([self.hero, self.ai_status], ratios=[5, 2])
+        hero_band.setMinimumHeight(260)
+        root.addWidget(hero_band)
 
         # ── MIDDLE: 3-column dashboard ──
         self.quick_actions = QuickActionsGrid()

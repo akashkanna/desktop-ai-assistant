@@ -8,6 +8,7 @@ from PySide6.QtCore import Signal, Qt, QSize
 
 from ui.theme.theme_manager import Colors, ThemeManager
 from ui.components.base import SectionHeader
+from ui.layout.responsive import ResponsiveColumns
 from ui.themes import glass_style
 
 
@@ -58,46 +59,54 @@ class WorkflowDashboard(QFrame):
         header.addWidget(self.create_btn)
         layout.addLayout(header)
 
-        stats = QHBoxLayout()
-        stats.setSpacing(8)
         self.stat_total = StatChip("Total", "0")
         self.stat_active = StatChip("Active", "0")
         self.stat_runs = StatChip("Runs Today", "0")
-        for s in (self.stat_total, self.stat_active, self.stat_runs):
-            stats.addWidget(s)
-        layout.addLayout(stats)
+        stats = ResponsiveColumns(
+            [self.stat_total, self.stat_active, self.stat_runs],
+            ratios=[1, 1, 1],
+        )
+        layout.addWidget(stats)
 
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet(f"""
             QTabWidget::pane {{ border: 1px solid {Colors.BORDER}; border-radius: 10px; background: rgba(10,20,40,0.4); }}
-            QTabBar::tab {{ padding: 6px 14px; font-size: 11px; color: {Colors.TEXT_SECONDARY}; }}
+            QTabBar::tab {{ padding: 8px 16px; font-size: 11px; color: {Colors.TEXT_SECONDARY}; }}
             QTabBar::tab:selected {{ color: {Colors.NEON_PURPLE}; border-bottom: 2px solid {Colors.NEON_PURPLE}; }}
         """)
+        self.tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.tabs.setMinimumHeight(200)
         self.list_widget = QListWidget()
-        self.list_widget.setMinimumHeight(72)
-        self.list_widget.setMaximumHeight(120)
+        self.list_widget.setMinimumHeight(120)
+        self.list_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.list_widget.setStyleSheet(f"""
             QListWidget {{ background: transparent; border: none; font-size: 12px; }}
-            QListWidget::item {{ padding: 10px 8px; margin: 2px 0; border-bottom: 1px solid {Colors.BORDER}; }}
-            QListWidget::item:selected {{ background: #7B61FF22; border-radius: 6px; }}
+            QListWidget::item {{ padding: 12px 10px; margin: 4px 0; border-bottom: 1px solid {Colors.BORDER}; border-radius: 8px; }}
+            QListWidget::item:selected {{ background: rgba(123, 97, 255, 0.16); color: {Colors.TEXT_PRIMARY}; }}
         """)
         self.tabs.addTab(self.list_widget, "Active")
         self.tabs.addTab(QWidget(), "History")
         self.tabs.addTab(QWidget(), "Favorites")
         layout.addWidget(self.tabs)
 
-        row = QHBoxLayout()
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Workflow name")
+        self.name_input.setMinimumHeight(34)
+        self.name_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.trigger_input = QLineEdit()
         self.trigger_input.setPlaceholderText("Trigger phrase")
-        row.addWidget(self.name_input)
-        row.addWidget(self.trigger_input)
-        layout.addLayout(row)
+        self.trigger_input.setMinimumHeight(34)
+        self.trigger_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        form_row = ResponsiveColumns([
+            self.name_input,
+            self.trigger_input,
+        ], ratios=[1, 1])
+        layout.addWidget(form_row)
 
         self.steps_input = QTextEdit()
         self.steps_input.setPlaceholderText("Steps (one per line)")
-        self.steps_input.setMaximumHeight(72)
+        self.steps_input.setMinimumHeight(110)
+        self.steps_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.steps_input)
 
         self.status_label = QLabel("")

@@ -8,8 +8,8 @@ import threading
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QStackedWidget, QVBoxLayout, QDialog,
-    QLineEdit, QTextEdit, QLabel, QPushButton,
+    QFrame, QHBoxLayout, QSplitter, QStackedWidget, QVBoxLayout, QDialog,
+    QLineEdit, QTextEdit, QLabel, QPushButton, QSizePolicy,
 )
 from PySide6.QtCore import Signal, Slot, QTimer, Qt
 
@@ -31,7 +31,8 @@ class WorkflowDialog(QDialog):
         super().__init__(parent)
         self.controller = controller
         self.setWindowTitle("Create Workflow")
-        self.setFixedSize(440, 400)
+        self.setMinimumSize(420, 380)
+        self.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.MinimumExpanding)
         self.setStyleSheet(ThemeManager.global_stylesheet())
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -39,10 +40,12 @@ class WorkflowDialog(QDialog):
         layout.addWidget(QLabel("Create a new workflow"))
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("Workflow name")
+        self.name_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(self.name_input)
         self.definition_input = QTextEdit()
         self.definition_input.setPlaceholderText("Steps (one per line)")
-        self.definition_input.setFixedHeight(160)
+        self.definition_input.setMinimumHeight(140)
+        self.definition_input.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.definition_input)
         self.message_label = QLabel("")
         self.message_label.setStyleSheet(f"color: {Colors.DANGER};")
@@ -79,8 +82,8 @@ class MainWindow(FramelessWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Jarvis AI — Desktop Assistant OS")
-        self.resize(1440, 920)
-        self.setMinimumSize(960, 680)
+        self.resize(1366, 768)
+        self.setMinimumSize(960, 620)
 
         self._settings = self._load_settings()
         self._integrations = IntegrationRegistry()
@@ -124,10 +127,18 @@ class MainWindow(FramelessWindow):
         root.setSpacing(0)
 
         self.sidebar = CollapsibleSidebar()
-        root.addWidget(self.sidebar)
+        self.sidebar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(10)
+        splitter.setChildrenCollapsible(False)
+        splitter.setContentsMargins(0, 0, 0, 0)
+        splitter.addWidget(self.sidebar)
+        splitter.setStyleSheet("QSplitter::handle { background: rgba(255,255,255,0.07); }")
 
         content_wrap = QFrame()
         content_wrap.setStyleSheet(f"background: {Colors.BG_PRIMARY};")
+        content_wrap.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         content_layout = QVBoxLayout(content_wrap)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
@@ -157,14 +168,23 @@ class MainWindow(FramelessWindow):
         content_layout.addWidget(self.command_dock)
         self.bottom_bar = self.command_dock  # backward compat alias
 
-        root.addWidget(content_wrap, stretch=1)
+        splitter.addWidget(content_wrap)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        root.addWidget(splitter)
 
     def _wire_events(self):
         self.sidebar.page_selected.connect(self._navigate)
-        self.header.minimize_clicked.connect(self.showMinimized)
-        self.header.maximize_clicked.connect(self._toggle_maximize)
+
+        # --- Window control buttons (delegate to FramelessWindow base) ---
+        self.header.minimize_clicked.connect(self.minimize)
+        self.header.maximize_clicked.connect(self.toggle_maximize)
         self.header.close_clicked.connect(self.close)
         self.header.search_submitted.connect(self._handle_search)
+
+        # Keep the maximize/restore icon in sync with actual window state.
+        self.window_state_changed.connect(self.header.update_maximize_icon)
+        self.window_state_changed.connect(self._refresh_layout_on_state_change)
 
         dock = self.command_dock
         dock.listen_toggled.connect(self._toggle_listen)
@@ -185,6 +205,21 @@ class MainWindow(FramelessWindow):
         self.dashboard.quick_actions.action_triggered.connect(self._handle_quick_action)
         self._monitor.metrics_updated.connect(self._on_metrics)
         self._activity.entry_added.connect(self.dashboard.activity.add_entry)
+
+    def _refresh_layout_on_state_change(self, state: str):
+        if state in ("normal", "maximized"):
+            if self.centralWidget() is not None:
+                cw = self.centralWidget()
+                if cw.layout() is not None:
+                    cw.layout().invalidate()
+                cw.updateGeometry()
+                cw.update()
+            self.sidebar.updateGeometry()
+            self.header.updateGeometry()
+            self.stack.updateGeometry()
+            self.stack.currentWidget().updateGeometry()
+            self.dashboard.updateGeometry()
+            self.repaint()
 
     def _on_metrics(self, metrics):
         self.dashboard.system_monitor.update_metrics(metrics)
@@ -288,30 +323,36 @@ class MainWindow(FramelessWindow):
 
     def _toggle_gesture_mode(self):
         gesture = self.controller.gesture_controller
-        if getattr(gesture, "running", False):
-            gesture.stop()
+        if gesture.gesture_enabled:
+            result = gesture.stop_gesture()
             self._gesture_enabled = False
         else:
-            gesture.start()
-            self._gesture_enabled = getattr(gesture, "running", False)
+            result = gesture.start_gesture()
+            self._gesture_enabled = gesture.gesture_enabled
         self.command_dock.set_gesture_enabled(self._gesture_enabled)
         self.dashboard.hero.set_gesture_mode(self._gesture_enabled)
         self.dashboard.ai_status.set_gesture(self._gesture_enabled, "Active" if self._gesture_enabled else "Off")
         self._activity.log(
-            "Gesture control enabled" if self._gesture_enabled else "Gesture control stopped",
+            result,
             "gesture", "✋",
         )
 
     def _toggle_camera(self):
-        self._camera_enabled = not self._camera_enabled
+        if self._camera_enabled:
+            result = self.controller.gesture_controller.stop_camera()
+            self._camera_enabled = False
+        else:
+            result = self.controller.gesture_controller.start_camera()
+            self._camera_enabled = self.controller.gesture_controller.camera_enabled
         self.command_dock.set_camera_enabled(self._camera_enabled)
-        if self._camera_enabled and not self._gesture_enabled:
-            self._toggle_gesture_mode()
+        self._activity.log(result, "gesture", "📷")
 
     def _emergency_stop(self):
         self.controller.stop_listening()
-        if getattr(self.controller.gesture_controller, "running", False):
-            self.controller.gesture_controller.stop()
+        if self.controller.gesture_controller.gesture_enabled:
+            self.controller.gesture_controller.stop_gesture()
+        if self.controller.gesture_controller.camera_enabled:
+            self.controller.gesture_controller.stop_camera()
         self._gesture_enabled = False
         self._camera_enabled = False
         self.command_dock.set_gesture_enabled(False)
@@ -343,8 +384,8 @@ class MainWindow(FramelessWindow):
         except Exception as exc:
             self._activity.log(str(exc), "system", "⚠")
 
-    def _toggle_maximize(self):
-        self.showNormal() if self.isMaximized() else self.showMaximized()
+    # NOTE: _toggle_maximize removed — window management is now centralised
+    # in FramelessWindow.toggle_maximize() (see ui/components/base.py).
 
     def _auto_start(self):
         self.controller.update_ui(
@@ -408,6 +449,6 @@ class MainWindow(FramelessWindow):
         QTimer.singleShot(0, lambda: self.dashboard.workflow.voice_btn.setEnabled(True))
 
     def closeEvent(self, event):
-        self.controller.stop_listening()
+        self.controller.shutdown()
         self._monitor.stop()
         event.accept()

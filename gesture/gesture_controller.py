@@ -7,6 +7,8 @@ and open-palm pause/resume behavior.
 import threading
 import time
 from collections import deque
+from pathlib import Path
+from threading import Event
 from logger_config import setup_logger
 
 logger = setup_logger("gesture_controller")
@@ -41,9 +43,12 @@ class GestureController:
     def __init__(self, camera_index: int = 0):
         self.camera_index = camera_index
         self.running = False
+        self.camera_enabled = False
+        self.gesture_enabled = False
         self.paused = False
         self._thread = None
         self._stop_requested = False
+        self._camera_ready = Event()
         self._last_positions = deque(maxlen=12)
         self._last_click_time = 0.0
         self._last_navigation_time = 0.0
@@ -57,6 +62,7 @@ class GestureController:
         self._hand_landmarker = None
         self._mp_image = None
         self._init_error = None  # Store initialization errors
+        self._camera = None
 
     def _get_screen_size(self):
         try:
@@ -95,41 +101,23 @@ class GestureController:
             raise
 
     def start(self) -> str:
-        if self.running:
+        if self.gesture_enabled and self.camera_enabled:
             return "Hand gesture control is already running."
         try:
             self._import_dependencies()
         except ImportError:
             return "Hand gesture control requires OpenCV and MediaPipe. Please install them first."
         except Exception as e:
-            return f"Hand gesture control requires OpenCV and MediaPipe. Error: {str(e)}"
-
+            return f"Hand gesture control initialization error: {e}"
         self._stop_requested = False
         self._init_error = None
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-        
-        # Wait briefly for initialization to complete or fail critically
-        time.sleep(0.5)
-        
-        # Only report errors if they're critical (camera access, etc.)
-        # Model download failures are non-critical and will be handled gracefully
-        if self._init_error and "camera" in self._init_error.lower():
-            self.running = False
-            return f"Failed to start gesture control: {self._init_error}"
-        
-        if not self.running and self._init_error:
-            # Other errors are non-critical
-            self.running = False
-            return f"Gesture control starting (warning: {self._init_error}). Retrying initialization..."
-        
-        if not self.running and not self._init_error:
-            # Silent failure - try to recover
-            time.sleep(0.2)
-            if not self.running:
-                return "Hand gesture control initialization in progress. Try again in a moment."
-        
-        self.running = True
+        self.gesture_enabled = True
+        self.camera_enabled = True
+        self._start_worker()
+        initialized = self._camera_ready.wait(timeout=3.0)
+        if not initialized or self._init_error:
+            self.gesture_enabled = False
+            return f"Hand gesture control failed to start: {self._init_error or 'camera unavailable or initialization timed out.'}"
         return (
             "Hand gesture control started. Use one finger to move the cursor, "
             "pinch for left click, two-finger pinch for right click, "
@@ -137,15 +125,94 @@ class GestureController:
         )
 
     def stop(self) -> str:
-        if not self.running:
+        if not self.gesture_enabled and not self.camera_enabled:
             return "Hand gesture control is not currently running."
+        self.gesture_enabled = False
+        self.camera_enabled = False
         self._stop_requested = True
         if self._thread:
             self._thread.join(timeout=2.0)
+        self._cleanup_camera()
+        self._camera_ready.clear()
         self.running = False
         self.paused = False
         self._last_positions.clear()
         return "Hand gesture control stopped."
+
+    def start_camera(self) -> str:
+        if self.camera_enabled:
+            return "Camera is already active."
+        try:
+            self._import_dependencies()
+        except ImportError:
+            return "Camera mode requires OpenCV and MediaPipe. Please install them first."
+        except Exception as e:
+            return f"Camera initialization error: {e}"
+        self.camera_enabled = True
+        self._stop_requested = False
+        self._init_error = None
+        self._start_worker()
+        if not self._camera_ready.wait(timeout=3.0):
+            return f"Hand gesture control could not activate the camera: {self._init_error or 'camera unavailable or initialization timed out.'}"
+        return "Camera enabled and ready. Gesture support can be activated separately."
+
+    def stop_camera(self) -> str:
+        if not self.camera_enabled:
+            return "Camera is not active."
+        self.camera_enabled = False
+        self._stop_requested = True
+        if not self.gesture_enabled:
+            self._camera_ready.clear()
+        if self._thread:
+            self._thread.join(timeout=2.0)
+        self._cleanup_camera()
+        self.running = False
+        self.paused = False
+        return "Camera stopped. Gesture mode is now disabled."
+
+    def start_gesture(self) -> str:
+        if self.gesture_enabled:
+            return "Gesture mode is already enabled."
+        try:
+            self._import_dependencies()
+        except ImportError:
+            return "Gesture mode requires OpenCV and MediaPipe. Please install them first."
+        except Exception as e:
+            return f"Gesture initialization error: {e}"
+        self.gesture_enabled = True
+        self.camera_enabled = True
+        self._stop_requested = False
+        self._init_error = None
+        self._start_worker()
+        if not self._camera_ready.wait(timeout=3.0):
+            self.gesture_enabled = False
+            return f"Hand gesture control could not enable gesture mode: {self._init_error or 'camera unavailable or initialization timed out.'}"
+        return "Gesture mode enabled. Hand gestures are now active."
+
+    def stop_gesture(self) -> str:
+        if not self.gesture_enabled:
+            return "Gesture mode is not enabled."
+        self.gesture_enabled = False
+        self._stop_requested = not self.camera_enabled
+        if self._thread:
+            self._thread.join(timeout=2.0)
+        self.paused = False
+        return "Gesture mode stopped."
+
+    def _start_worker(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self._camera_ready.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _cleanup_camera(self) -> None:
+        if self._camera is not None:
+            try:
+                self._camera.release()
+            except Exception:
+                pass
+            self._camera = None
 
     def _run(self):
         try:
@@ -169,11 +236,13 @@ class GestureController:
             logger.warning(error_msg)
             self._init_error = None  # Allow graceful degradation
             # Continue anyway - will try to load model on next attempt
+            self._camera_ready.set()
         except Exception as e:
             error_msg = f"Failed to initialize MediaPipe Hand Landmarker: {str(e)}"
             logger.error(error_msg)
             self._init_error = error_msg
             self.running = False
+            self._camera_ready.set()
             return
 
         try:
@@ -183,16 +252,20 @@ class GestureController:
                 logger.error(error_msg)
                 self._init_error = error_msg
                 self.running = False
+                self._camera_ready.set()
                 return
+            self._camera = cap
             logger.info("Camera opened successfully.")
         except Exception as e:
             error_msg = f"Camera access error: {str(e)}"
             logger.error(error_msg)
             self._init_error = error_msg
             self.running = False
+            self._camera_ready.set()
             return
 
         self.running = True  # Mark as running after successful initialization
+        self._camera_ready.set()
         
         while not self._stop_requested:
             try:
@@ -232,7 +305,7 @@ class GestureController:
 
             time.sleep(0.02)
 
-        cap.release()
+        self._cleanup_camera()
         if self._hand_landmarker:
             try:
                 self._hand_landmarker.close()
@@ -242,14 +315,12 @@ class GestureController:
 
     def _download_model(self):
         """Download hand landmarker model if not present."""
-        import os
+        gesture_dir = Path(__file__).parent
+        model_path = gesture_dir / 'hand_landmarker.task'
         
-        gesture_dir = os.path.dirname(__file__)
-        model_path = os.path.join(gesture_dir, 'hand_landmarker.task')
-        
-        if os.path.exists(model_path):
+        if model_path.exists():
             logger.info(f"Using cached model: {model_path}")
-            return model_path
+            return str(model_path)
         
         logger.info("Hand landmarker model not found locally, attempting download...")
         
@@ -263,7 +334,7 @@ class GestureController:
                 with open(model_path, 'wb') as f:
                     f.write(response.content)
                 logger.info(f"Model downloaded successfully to {model_path}")
-                return model_path
+                return str(model_path)
         except Exception as e:
             logger.debug(f"Download with requests failed: {e}")
         
@@ -272,9 +343,9 @@ class GestureController:
             import urllib.request
             url = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker.task'
             logger.info(f"Trying alternative download from {url}...")
-            urllib.request.urlretrieve(url, model_path)
+            urllib.request.urlretrieve(url, str(model_path))
             logger.info(f"Model downloaded successfully to {model_path}")
-            return model_path
+            return str(model_path)
         except Exception as e:
             logger.debug(f"Alternative download failed: {e}")
         

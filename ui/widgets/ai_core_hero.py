@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from ui.theme.theme_manager import Colors
 from ui.components.base import SectionHeader
 from ui.components.waveform import WaveformWidget
+from ui.layout.responsive import ResponsiveHeroLayout
 from ui.avatar_widget import AvatarWidget
 from ui.themes import glass_style
 
@@ -26,13 +27,17 @@ class AiCoreHero(QFrame):
         self.setObjectName("AiCoreHero")
         self.setStyleSheet(f"QFrame#AiCoreHero {{ {glass_style(20, True)} }}")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.setMinimumHeight(300)
+        self.setMinimumHeight(260)
 
-        root = QHBoxLayout(self)
-        root.setContentsMargins(28, 24, 28, 24)
-        root.setSpacing(28)
+        wrapper = ResponsiveHeroLayout()
+        wrapper.setContentsMargins(20, 18, 20, 18)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(wrapper)
 
-        left = QVBoxLayout()
+        left_widget = QWidget()
+        left = QVBoxLayout(left_widget)
+        left.setContentsMargins(0, 0, 0, 0)
         left.setSpacing(10)
         left.addWidget(SectionHeader("AI Core"))
         self.state_badge = QLabel("IDLE")
@@ -45,7 +50,8 @@ class AiCoreHero(QFrame):
         self.state_sub = QLabel("Awaiting wake word…")
         self.state_sub.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 13px;")
         self.waveform = WaveformWidget(bar_count=20)
-        self.waveform.setFixedHeight(40)
+        self.waveform.setMinimumHeight(36)
+        self.waveform.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.wake_label = QLabel("Wake: Hey Assistant")
         self.wake_label.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-size: 11px;")
         left.addWidget(self.state_badge)
@@ -53,16 +59,19 @@ class AiCoreHero(QFrame):
         left.addWidget(self.waveform)
         left.addWidget(self.wake_label)
         left.addStretch()
-        root.addLayout(left, stretch=2)
 
-        center = QVBoxLayout()
+        center_widget = QWidget()
+        center = QVBoxLayout(center_widget)
+        center.setContentsMargins(0, 0, 0, 0)
         center.setAlignment(Qt.AlignCenter)
         self.avatar = AvatarWidget()
-        self.avatar.setFixedSize(240, 240)
+        self.avatar.setMinimumSize(140, 140)
+        self.avatar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         center.addWidget(self.avatar, alignment=Qt.AlignCenter)
-        root.addLayout(center, stretch=3)
 
-        right = QVBoxLayout()
+        right_widget = QWidget()
+        right = QVBoxLayout(right_widget)
+        right.setContentsMargins(0, 0, 0, 0)
         right.setSpacing(8)
         chips = [
             ("model_label", "Model", Colors.NEON_BLUE),
@@ -93,7 +102,7 @@ class AiCoreHero(QFrame):
             self._chip_labels[key] = v
             right.addWidget(chip)
         right.addStretch()
-        root.addLayout(right, stretch=2)
+        wrapper.set_sections(left_widget, center_widget, right_widget)
 
     def set_state(self, state: str):
         self.avatar.set_state(state)

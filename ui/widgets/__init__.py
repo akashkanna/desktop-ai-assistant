@@ -8,6 +8,7 @@ from ui.widgets.activity_timeline import ActivityTimeline
 from ui.widgets.system_monitor_bars import SystemMonitorBars
 from ui.widgets.command_dock import CommandDock
 from ui.widgets.collapsible_sidebar import CollapsibleSidebar
+from ui.widgets.premium_sidebar import PremiumSidebar
 
 __all__ = [
     "AiCoreHero",
@@ -18,4 +19,5 @@ __all__ = [
     "SystemMonitorBars",
     "CommandDock",
     "CollapsibleSidebar",
+    "PremiumSidebar",
 ]

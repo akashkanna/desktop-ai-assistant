@@ -33,6 +33,7 @@ class StatusRow(QFrame):
         """)
         row = QHBoxLayout(self)
         row.setContentsMargins(12, 8, 12, 8)
+        row.setSpacing(8)
         dot_color = Colors.SUCCESS if online else Colors.TEXT_MUTED
         dot = QLabel("●")
         dot.setStyleSheet(f"color: {dot_color}; font-size: 10px;")
@@ -48,10 +49,18 @@ class StatusRow(QFrame):
         row.addWidget(val)
         self._dot = dot
         self._val = val
+        self._name = name
 
     def update(self, online: bool, detail: str):
-        color = Colors.SUCCESS if online else Colors.TEXT_MUTED
+        detail_lower = detail.lower()
+        if not online or any(word in detail_lower for word in ("off", "error", "fail", "unavailable")):
+            color = Colors.DANGER
+        elif any(word in detail_lower for word in ("ok", "active", "ready", "%", "connected")):
+            color = Colors.SUCCESS
+        else:
+            color = Colors.WARNING
         self._dot.setStyleSheet(f"color: {color}; font-size: 10px;")
+        self._val.setStyleSheet(f"color: {color}; font-size: 10px;")
         self._val.setText(detail)
 
 
@@ -61,8 +70,7 @@ class AiCoreStatusPanel(QFrame):
         self.setObjectName("AiCoreStatus")
         self.setStyleSheet(f"QFrame#AiCoreStatus {{ {glass_style(18)} }}")
         self.setMinimumWidth(220)
-        self.setMaximumWidth(280)
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
         self._registry = registry or IntegrationRegistry()
         self._rows: dict[str, StatusRow] = {}
 

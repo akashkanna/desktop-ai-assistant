@@ -1,6 +1,6 @@
 """Responsive layout helpers and breakpoint constants."""
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QSizePolicy, QLayout
 from PySide6.QtCore import Qt
 
 
@@ -10,18 +10,19 @@ class Breakpoints:
     WIDE = 1400
 
 
-def _clear_layout(layout):
+def _clear_layout(layout: QLayout):
     while layout.count():
         item = layout.takeAt(0)
-        w = item.widget()
-        if w:
-            layout.removeWidget(w)
+        if item.widget():
+            layout.removeWidget(item.widget())
+        elif item.layout():
+            _clear_layout(item.layout())
 
 
 class ResponsiveColumns(QWidget):
-    """Stacks child column widgets horizontally or vertically based on width."""
+    """Stacks child column widgets horizontally, in a grid, or vertically based on width."""
 
-    MIN_COL_WIDTH = 300
+    MIN_COL_WIDTH = 320
 
     def __init__(self, columns: list[QWidget], ratios: list[int] | None = None, parent=None):
         super().__init__(parent)
@@ -29,41 +30,54 @@ class ResponsiveColumns(QWidget):
         self._columns = columns
         self._ratios = ratios or [1] * len(columns)
         self._h_layout = QHBoxLayout()
+        self._grid_layout = QGridLayout()
         self._v_layout = QVBoxLayout()
-        self._h_layout.setContentsMargins(0, 0, 0, 0)
-        self._h_layout.setSpacing(16)
-        self._v_layout.setContentsMargins(0, 0, 0, 0)
-        self._v_layout.setSpacing(16)
+        for layout in (self._h_layout, self._grid_layout, self._v_layout):
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(16)
         self._outer = QVBoxLayout(self)
         self._outer.setContentsMargins(0, 0, 0, 0)
         self._mode = None
-        self._apply_layout(compact=True)
+        self._apply_layout("horizontal")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        needed = self.MIN_COL_WIDTH * len(self._columns) + 32
-        compact = self.width() < needed
-        if compact != self._mode:
-            self._apply_layout(compact)
+        width = self.width()
+        if width >= self.MIN_COL_WIDTH * len(self._columns):
+            target = "horizontal"
+        elif width >= self.MIN_COL_WIDTH * min(2, len(self._columns)):
+            target = "grid"
+        else:
+            target = "vertical"
+        if target != self._mode:
+            self._apply_layout(target)
 
-    def _apply_layout(self, compact: bool):
-        self._mode = compact
+    def _apply_layout(self, mode: str):
+        self._mode = mode
         _clear_layout(self._h_layout)
+        _clear_layout(self._grid_layout)
         _clear_layout(self._v_layout)
         _clear_layout(self._outer)
 
-        if compact:
-            for col in self._columns:
-                col.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-                col.setMinimumWidth(0)
-                self._v_layout.addWidget(col)
-            self._outer.addLayout(self._v_layout)
-        else:
+        if mode == "horizontal":
             for col, ratio in zip(self._columns, self._ratios):
                 col.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 col.setMinimumWidth(self.MIN_COL_WIDTH)
                 self._h_layout.addWidget(col, ratio)
             self._outer.addLayout(self._h_layout)
+        elif mode == "grid":
+            columns = min(2, len(self._columns))
+            for idx, col in enumerate(self._columns):
+                col.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                col.setMinimumWidth(self.MIN_COL_WIDTH)
+                self._grid_layout.addWidget(col, idx // columns, idx % columns)
+            self._outer.addLayout(self._grid_layout)
+        else:
+            for col in self._columns:
+                col.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                col.setMinimumWidth(0)
+                self._v_layout.addWidget(col)
+            self._outer.addLayout(self._v_layout)
 
 
 class ResponsiveHeroLayout(QWidget):

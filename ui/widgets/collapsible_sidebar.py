@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QScrollArea, QSizePolicy, QToolButton,
 )
-from PySide6.QtCore import Signal, Qt, QPropertyAnimation, QEasingCurve
+from PySide6.QtCore import Signal, Qt
 
 from ui.theme.theme_manager import Colors, ThemeManager
 from ui.themes import glass_style
@@ -28,13 +28,15 @@ class CollapsibleSidebar(QFrame):
     page_selected = Signal(str)
     collapsed_changed = Signal(bool)
 
-    EXPANDED_W = 220
+    EXPANDED_W = 240
     COLLAPSED_W = 64
 
     def __init__(self):
         super().__init__()
         self._collapsed = False
-        self.setFixedWidth(self.EXPANDED_W)
+        self.setMinimumWidth(self.EXPANDED_W)
+        self.setMaximumWidth(self.EXPANDED_W)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.setStyleSheet(f"""
             QFrame {{
                 background-color: {Colors.BG_SIDEBAR};
@@ -48,14 +50,15 @@ class CollapsibleSidebar(QFrame):
         layout.setSpacing(4)
 
         top = QHBoxLayout()
-        top.setContentsMargins(8, 4, 8, 4)
+        top.setContentsMargins(10, 8, 10, 8)
         self.brand = QLabel("JARVIS")
         self.brand.setStyleSheet(
             f"color: {Colors.NEON_BLUE}; font-size: 13px; font-weight: 900; letter-spacing: 3px;"
         )
         self.toggle_btn = QToolButton()
         self.toggle_btn.setText("☰")
-        self.toggle_btn.setFixedSize(32, 32)
+        self.toggle_btn.setMinimumSize(32, 32)
+        self.toggle_btn.setMaximumSize(40, 40)
         self.toggle_btn.setStyleSheet(f"""
             QToolButton {{
                 background: rgba(10,20,40,0.6); border: 1px solid {Colors.BORDER};
@@ -77,15 +80,17 @@ class CollapsibleSidebar(QFrame):
 
         nav_host = QWidget()
         nav_layout = QVBoxLayout(nav_host)
-        nav_layout.setContentsMargins(0, 0, 4, 0)
-        nav_layout.setSpacing(2)
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        nav_layout.setSpacing(4)
         self._buttons: dict[str, QPushButton] = {}
         for key, icon, label in NAV_ITEMS:
-            btn = QPushButton(f" {icon}  {label}")
-            btn.setProperty("full_label", f" {icon}  {label}")
+            btn = QPushButton(f"{icon}  {label}")
+            btn.setProperty("full_label", f"{icon}  {label}")
             btn.setProperty("icon_only", icon)
-            btn.setMinimumHeight(36)
+            btn.setMinimumHeight(40)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn.setCursor(Qt.PointingHandCursor)
+            btn.setToolTip(label)
             btn.clicked.connect(lambda checked=False, k=key: self._select(k))
             self._buttons[key] = btn
             nav_layout.addWidget(btn)
@@ -109,22 +114,27 @@ class CollapsibleSidebar(QFrame):
             text = btn.property("icon_only") if self._collapsed else btn.property("full_label")
             btn.setText(text)
         self.status_lbl.setVisible(not self._collapsed)
-        anim = QPropertyAnimation(self, b"minimumWidth")
-        anim.setDuration(220)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
-        anim.setEndValue(target)
-        anim.start()
-        self.setFixedWidth(target)
+        self.setMinimumWidth(target)
+        self.setMaximumWidth(target)
+        self._apply_styles()
+        self.updateGeometry()
+        self.repaint()
+        parent = self.parentWidget()
+        if parent and parent.layout():
+            parent.layout().invalidate()
+            parent.updateGeometry()
+            parent.update()
         self.collapsed_changed.emit(self._collapsed)
 
     def _apply_styles(self):
+        align = "center" if self._collapsed else "left"
         for btn in self._buttons.values():
             btn.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent; color: {Colors.TEXT_SECONDARY};
                     border: none; border-left: 3px solid transparent;
-                    border-radius: 0 10px 10px 0; text-align: left;
-                    padding: 8px 12px; font-size: 12px; font-weight: 600;
+                    border-radius: 0 14px 14px 0; text-align: {align};
+                    padding: 10px 12px; font-size: 12px; font-weight: 600;
                 }}
                 QPushButton:hover {{ background: #00A3FF11; color: {Colors.TEXT_PRIMARY}; }}
             """)
@@ -138,8 +148,8 @@ class CollapsibleSidebar(QFrame):
                         background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #00A3FF33,stop:1 #7B61FF22);
                         color: {Colors.TEXT_PRIMARY}; border: none;
                         border-left: 3px solid {Colors.NEON_BLUE};
-                        border-radius: 0 10px 10px 0; text-align: left;
-                        padding: 8px 12px; font-size: 12px; font-weight: 700;
+                        border-radius: 0 14px 14px 0; text-align: left;
+                        padding: 10px 12px; font-size: 12px; font-weight: 700;
                     }}
                 """)
             else:
@@ -147,8 +157,8 @@ class CollapsibleSidebar(QFrame):
                     QPushButton {{
                         background: transparent; color: {Colors.TEXT_SECONDARY};
                         border: none; border-left: 3px solid transparent;
-                        border-radius: 0 10px 10px 0; text-align: left;
-                        padding: 8px 12px; font-size: 12px; font-weight: 600;
+                        border-radius: 0 14px 14px 0; text-align: left;
+                        padding: 10px 12px; font-size: 12px; font-weight: 600;
                     }}
                     QPushButton:hover {{ background: #00A3FF11; color: {Colors.TEXT_PRIMARY}; }}
                 """)
