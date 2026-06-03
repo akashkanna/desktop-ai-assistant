@@ -15,12 +15,17 @@ logger = setup_logger("task_router")
 
 
 class TaskRouter:
-    def __init__(self):
-        self.app_launcher  = AppLauncher()
-        self.browser       = BrowserActions()
-        self.whatsapp      = WhatsAppActions()
+    def __init__(self, settings=None, context_manager=None):
+        self.settings = settings or {}
+        self.context_manager = context_manager
+        self.app_launcher = AppLauncher()
+        self.browser = BrowserActions()
+        self.whatsapp = WhatsAppActions()
+        self.clarification_manager = None
         self._last_response = ""
-        self._parser = IntentParser()
+        self._parser = IntentParser(self.context_manager, self.settings)
+        self.on_clarification_needed = lambda question, intent: None
+        self.on_confirmation_needed = lambda intent, message: None
 
     # ─────────────────────────── public ──────────────────────────────
 
@@ -227,6 +232,44 @@ class TaskRouter:
         """Re-parse a sub-command and execute it."""
         parsed = self._parser.parse(text)
         return self._dispatch(parsed.intent, parsed.entities, parsed)
+
+    def _get_whatsapp(self):
+        return self.whatsapp
+
+    def route(self, intent_data: dict):
+        """Route a parsed intent dict through clarification, confirmation, or execution."""
+        intent = intent_data.get("intent")
+        confidence = intent_data.get("confidence", 1.0)
+        entities = intent_data.get("entities", {})
+        missing = intent_data.get("missing_fields", [])
+        requires_confirmation = intent_data.get("requires_confirmation", False)
+        response = intent_data.get("response", "")
+
+        if intent == "cancel_task":
+            if self.context_manager and hasattr(self.context_manager, "clear_pending_confirmation"):
+                self.context_manager.clear_pending_confirmation()
+            elif self.context_manager and hasattr(self.context_manager, "clear_pending"):
+                self.context_manager.clear_pending()
+            return True, response or "Cancelled."
+
+        threshold = self.settings.get("confidence_threshold", 0.65)
+        if confidence < threshold or missing:
+            if not self.clarification_manager:
+                from core.clarification_manager import ClarificationManager
+                self.clarification_manager = ClarificationManager(threshold)
+            question = self.clarification_manager.get_question(
+                ParsedIntent(intent, confidence, entities, requires_confirmation, missing)
+            )
+            self.on_clarification_needed(question, intent_data)
+            return False, question
+
+        if requires_confirmation:
+            if self.context_manager:
+                self.context_manager.set_pending_confirmation(intent_data)
+            self.on_confirmation_needed(intent, response)
+            return False, response or f"Please confirm {intent}."
+
+        return True, self._dispatch(intent, entities, ParsedIntent(intent, confidence, entities, requires_confirmation, missing))
 
     def _looks_like_question(self, text: str) -> bool:
         if not text or len(text.split()) < 2:

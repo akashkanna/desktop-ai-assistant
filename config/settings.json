@@ -21,8 +21,8 @@
   },
   "ui": {
     "theme": "dark",
-    "window_width": 1100,
-    "window_height": 720,
+    "window_width": 1440,
+    "window_height": 900,
     "accent_color": "#7C3AED",
     "font_family": "Segoe UI",
     "always_on_top": false,

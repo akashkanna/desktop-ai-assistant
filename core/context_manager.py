@@ -122,6 +122,9 @@ class ContextManager:
     def clear_pending(self):
         self.stm.reset_confirmation()
 
+    def clear_pending_confirmation(self):
+        self.clear_pending()
+
     def set_clarification(self, state: dict):
         self.stm.clarification_state = state
         self.stm.is_awaiting_response = True

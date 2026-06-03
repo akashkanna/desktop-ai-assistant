@@ -13,6 +13,7 @@ from core.workflow_engine import WorkflowEngine
 from core.task_monitor import TaskMonitor
 from core.notification_manager import NotificationManager
 from core.plugin_manager import PluginManager
+from gesture import GestureController
 from voice.text_to_speech import TextToSpeech
 from voice.speech_to_text import SpeechToText
 from logger_config import setup_logger
@@ -34,6 +35,7 @@ class AssistantController:
         self.task_monitor = TaskMonitor()
         self.notification_manager = NotificationManager(self.context_manager.ltm)
         self.plugin_manager = PluginManager()
+        self.gesture_controller = GestureController()
 
         self.tts = TextToSpeech()
         self.stt = SpeechToText()
@@ -215,6 +217,36 @@ class AssistantController:
                 return True
             details = "; ".join(f"{t.name} is {t.status}" for t in tasks[:3])
             self.speak(details)
+            return True
+
+        if parsed.intent == "enable_gesture_mode":
+            response = self.gesture_controller.start()
+            self.speak(response)
+            return True
+
+        if parsed.intent == "disable_gesture_mode":
+            response = self.gesture_controller.stop()
+            self.speak(response)
+            return True
+
+        if parsed.intent == "move_window_left":
+            response = self.gesture_controller.move_active_window_left()
+            self.speak(response)
+            return True
+
+        if parsed.intent == "move_window_right":
+            response = self.gesture_controller.move_active_window_right()
+            self.speak(response)
+            return True
+
+        if parsed.intent == "scroll_top":
+            response = self.gesture_controller.scroll_to_top()
+            self.speak(response)
+            return True
+
+        if parsed.intent == "scroll_bottom":
+            response = self.gesture_controller.scroll_to_bottom()
+            self.speak(response)
             return True
 
         return False

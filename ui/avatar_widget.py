@@ -16,7 +16,8 @@ class AvatarWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(220, 220)
+        self.setMinimumSize(140, 140)
+        self.resize(180, 180)
         self._state = "idle"
         self._tick = 0.0           # continuous time counter for animations
         self._wave_bars = [0.0] * 12   # bar heights for listening waveform
@@ -57,6 +58,9 @@ class AvatarWidget(QWidget):
         # ── Background glow ──────────────────────────────
         self._draw_glow(p, cx, cy, r, t)
 
+        # ── Rotating neon rings ───────────────────────────
+        self._draw_rotating_rings(p, cx, cy, r, t)
+
         # ── Outer ring ──────────────────────────────────
         self._draw_outer_ring(p, cx, cy, r, t)
 
@@ -82,34 +86,53 @@ class AvatarWidget(QWidget):
         pulse = 0.4 + 0.15 * math.sin(t)
         gradient = QRadialGradient(QPointF(cx, cy), r * 1.4)
         if self._state == "listening":
-            c = QColor(30, 150, 255, int(80 * pulse))
+            c = QColor(0, 163, 255, int(80 * pulse))
         elif self._state == "speaking":
-            c = QColor(160, 80, 255, int(90 * pulse))
+            c = QColor(123, 97, 255, int(90 * pulse))
         elif self._state == "thinking":
-            c = QColor(255, 180, 30, int(70 * pulse))
+            c = QColor(255, 217, 61, int(70 * pulse))
         else:
-            c = QColor(80, 200, 160, int(60 * pulse))
+            c = QColor(0, 255, 209, int(60 * pulse))
         gradient.setColorAt(0, c)
         gradient.setColorAt(1, QColor(0, 0, 0, 0))
         p.setPen(Qt.NoPen)
         p.setBrush(QBrush(gradient))
         p.drawEllipse(QPointF(cx, cy), r * 1.4, r * 1.4)
 
+    def _draw_rotating_rings(self, p, cx, cy, r, t):
+        """Multi-layer rotating neon rings — signature JARVIS look."""
+        configs = [
+            (1.05, 2.0, "#00A3FF", 2, 1.0),
+            (1.18, -1.5, "#7B61FF", 1, 0.7),
+            (1.30, 1.2, "#00FFD1", 1, 0.45),
+        ]
+        for scale, speed, hex_color, width, alpha_base in configs:
+            qc = QColor(hex_color)
+            pulse = alpha_base * (0.6 + 0.4 * abs(math.sin(t * speed)))
+            qc.setAlpha(int(180 * pulse))
+            pen = QPen(qc, width)
+            p.setPen(pen)
+            p.setBrush(Qt.NoBrush)
+            ring_r = r * scale
+            start = int((t * speed * 40) % 360) * 16
+            span = int(270 * 16)
+            p.drawArc(int(cx - ring_r), int(cy - ring_r), int(ring_r * 2), int(ring_r * 2), start, span)
+
     def _draw_outer_ring(self, p, cx, cy, r, t):
         pen = QPen()
         pen.setWidth(3)
         if self._state == "listening":
             alpha = int(200 + 55 * math.sin(t * 4))
-            pen.setColor(QColor(30, 150, 255, alpha))
+            pen.setColor(QColor(0, 163, 255, alpha))
         elif self._state == "speaking":
             alpha = int(200 + 55 * math.sin(t * 6))
-            pen.setColor(QColor(160, 80, 255, alpha))
+            pen.setColor(QColor(123, 97, 255, alpha))
         elif self._state == "thinking":
             alpha = int(200 + 55 * math.sin(t * 3))
-            pen.setColor(QColor(255, 180, 30, alpha))
+            pen.setColor(QColor(255, 217, 61, alpha))
         else:
             alpha = int(160 + 40 * math.sin(t))
-            pen.setColor(QColor(80, 200, 160, alpha))
+            pen.setColor(QColor(0, 255, 209, alpha))
         p.setPen(pen)
         p.setBrush(Qt.NoBrush)
         p.drawEllipse(QPointF(cx, cy), r, r)
@@ -199,13 +222,13 @@ class AvatarWidget(QWidget):
         blink  = abs(math.sin(t * 0.4)) > 0.97
 
         if self._state == "listening":
-            eye_color = QColor(30, 180, 255)
+            eye_color = QColor(0, 163, 255)
         elif self._state == "speaking":
-            eye_color = QColor(180, 80, 255)
+            eye_color = QColor(123, 97, 255)
         elif self._state == "thinking":
-            eye_color = QColor(255, 200, 30)
+            eye_color = QColor(255, 217, 61)
         else:
-            eye_color = QColor(80, 220, 160)
+            eye_color = QColor(0, 255, 209)
 
         for dx in (-eye_gap, eye_gap):
             ex, ey = cx + dx, eye_y

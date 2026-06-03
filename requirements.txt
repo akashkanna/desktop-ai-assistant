@@ -32,6 +32,11 @@ python-Levenshtein>=0.25.1
 Pillow>=10.0.0
 pytesseract>=0.3.10
 
+# Vision / Gesture Controls
+opencv-python>=4.9.0
+mediapipe>=0.10.35
+screeninfo>=0.8.0
+
 # Data Storage
 
 # SQLite is built into Python stdlib

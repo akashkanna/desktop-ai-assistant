@@ -50,7 +50,7 @@ INTENT_PATTERNS = [
      []),
 
     ("confirm_no",
-     [r"^(no|nope|don'?t|do\s+not|skip|decline|never\s+mind|cancel|abort|stop|forget\s+it)$"],
+     [r"^(no|nope|don'?t|do\s+not|skip|decline|never\s+mind|abort|stop|forget\s+it)$"],
      []),
 
     # ── Cancel ─────────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ INTENT_PATTERNS = [
       r"send\s+(.+)\s+to\s+(\w[\w\s]*)\s+on\s+whatsapp",
       r"send\s+(?:a\s+)?(?:whatsapp\s+)?message\s+to\s+(\w[\w\s]*)",
       r"text\s+(\w[\w\s]*)\s+(?:saying|that)\s+(.+)"],
-     ["contact"]),
+     ["contact", "message"]),
 
     # ── YouTube search ─────────────────────────────────────────────────
     ("search_youtube",
@@ -190,6 +190,30 @@ INTENT_PATTERNS = [
       r"check\s+task\s+(.+)",
       r"task\s+status\s+for\s+(.+)"],
      ["task_name"]),
+    ("enable_gesture_mode",
+     [r"(?:enable|start|turn on)\s+(?:hand|gesture)\s+(?:mode|control)",
+      r"start\s+gesture\s+control"],
+     []),
+    ("disable_gesture_mode",
+     [r"(?:disable|stop|turn off)\s+(?:hand|gesture)\s+(?:mode|control)",
+      r"stop\s+gesture\s+control"],
+     []),
+    ("move_window_left",
+     [r"(?:move|switch)\s+(?:window|application)\s+(?:to\s+)?left(?:\s+monitor)?",
+      r"swipe\s+left"],
+     []),
+    ("move_window_right",
+     [r"(?:move|switch)\s+(?:window|application)\s+(?:to\s+)?right(?:\s+monitor)?",
+      r"swipe\s+right"],
+     []),
+    ("scroll_top",
+     [r"(?:scroll|go)\s+(?:to\s+)?top",
+      r"swipe\s+up"],
+     []),
+    ("scroll_bottom",
+     [r"(?:scroll|go)\s+(?:to\s+)?bottom",
+      r"swipe\s+down"],
+     []),
     # ── Open application (LAST — very broad pattern) ───────────────────
     ("open_application",
      [r"open\s+(.+)",
@@ -383,8 +407,14 @@ CONFIRMATION_INTENTS = {
 }
 
 class IntentParser:
-    def __init__(self, confidence_threshold: float = 0.60):
-        self.confidence_threshold = confidence_threshold
+    def __init__(self, context_manager=None, settings=None, confidence_threshold: float = 0.60):
+        self.context_manager = context_manager
+        self.settings = settings or {}
+        self.confidence_threshold = (
+            self.settings.get("confidence_threshold")
+            if isinstance(self.settings, dict) and self.settings.get("confidence_threshold") is not None
+            else confidence_threshold
+        )
         self._compiled = self._compile_patterns()
         logger.info("IntentParser initialised.")
 
@@ -431,3 +461,30 @@ class IntentParser:
         )
         logger.warning(f"No intent matched for: '{text}'")
         return result
+
+    def _parse_with_fallback(self, text: str) -> dict:
+        parsed = self.parse(text)
+        intent = parsed.intent
+        if parsed.intent == "confirm_no" and text.strip().lower().startswith("cancel"):
+            intent = "cancel_task"
+        elif parsed.intent in ("confirm_yes", "confirm_no"):
+            intent = "confirm_action"
+        elif parsed.intent == "cancel":
+            intent = "cancel_task"
+
+        payload = parsed.to_dict()
+        payload["intent"] = intent
+        if parsed.intent == "unknown":
+            payload["raw"] = text
+        return payload
+
+    def get_clarification_question(self, intent: str, missing_fields: list) -> str:
+        from core.clarification_manager import ClarificationManager
+        temp_parsed = ParsedIntent(
+            intent=intent,
+            confidence=0.0,
+            entities={},
+            requires_confirmation=False,
+            missing_fields=missing_fields,
+        )
+        return ClarificationManager(self.confidence_threshold).get_question(temp_parsed)
