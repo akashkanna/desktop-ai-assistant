@@ -55,4 +55,4 @@ htmlcov/
 # Project Specific
 config/app_paths.json
 *.lnk
-*.bat
+# *.bat
