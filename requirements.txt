@@ -7,30 +7,16 @@ PySide6>=6.5.0
 
 # Speech Recognition
 SpeechRecognition>=3.10.0
-pyaudio>=0.2.13
 
 # Text-to-Speech
 pyttsx3>=2.90
-edge-tts>=6.1.9
 
 # Desktop Automation
 pyautogui>=0.9.54
 pygetwindow>=0.0.9
-keyboard>=0.13.5
-mouse>=0.7.1
-
-# Browser Automation (WhatsApp Web)
-selenium>=4.15.0
-webdriver-manager>=4.0.1
-
-# NLP / Intent Parsing
-nltk>=3.8.1
-fuzzywuzzy>=0.18.0
-python-Levenshtein>=0.25.1
 
 # Screen Analysis (optional OCR)
 Pillow>=10.0.0
-pytesseract>=0.3.10
 
 # Vision / Gesture Controls
 opencv-python>=4.9.0
@@ -42,12 +28,16 @@ screeninfo>=0.8.0
 # SQLite is built into Python stdlib
 
 # Async support
-asyncio>=3.4.3
+# asyncio is provided by Python standard library on Python 3.13+.
 
 # Utilities
 requests>=2.31.0
-python-dotenv>=1.0.0
 colorlog>=6.7.0
+
+# System utilities
+pycaw>=2023.1.31
+comtypes>=1.1.14
+pywin32>=306
 
 # Audio playback
 
