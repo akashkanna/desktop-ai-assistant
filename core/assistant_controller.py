@@ -41,25 +41,9 @@ class AssistantController:
         self.stt = SpeechToText()
 
         self.is_listening = False
-        self._listen_stop_event = threading.Event()
         self.listen_thread = None
 
         logger.info("AssistantController initialized.")
-
-    def shutdown(self):
-        self.stop_listening()
-        try:
-            self.tts.shutdown()
-        except Exception:
-            pass
-        try:
-            self.gesture_controller.stop_gesture()
-        except Exception:
-            pass
-        try:
-            self.gesture_controller.stop_camera()
-        except Exception:
-            pass
 
     # ─────────────────────────── UI helper ───────────────────────────
 
@@ -310,7 +294,6 @@ class AssistantController:
     def start_listening(self):
         if self.is_listening:
             return
-        self._listen_stop_event.clear()
         self.is_listening = True
         self.update_ui(status="Listening…", avatar_state="listening")
 
@@ -318,19 +301,14 @@ class AssistantController:
             return
 
         def _loop():
-            while self.is_listening and not self._listen_stop_event.is_set():
-                text = self.stt.listen(timeout=3, phrase_time_limit=5, stop_event=self._listen_stop_event)
+            while self.is_listening:
+                text = self.stt.listen()
                 if text and self.is_listening:
                     self.process_text_input(text)
-                if self._listen_stop_event.is_set():
-                    break
 
         self.listen_thread = threading.Thread(target=_loop, daemon=True)
         self.listen_thread.start()
 
     def stop_listening(self):
         self.is_listening = False
-        self._listen_stop_event.set()
-        if self.listen_thread and self.listen_thread.is_alive():
-            self.listen_thread.join(timeout=1.0)
         self.update_ui(status="Idle", avatar_state="idle")

@@ -10,6 +10,7 @@ from collections import deque
 from pathlib import Path
 from threading import Event
 from logger_config import setup_logger
+from PySide6.QtCore import QObject, Signal
 
 logger = setup_logger("gesture_controller")
 
@@ -39,8 +40,14 @@ HAND_LANDMARKS = {
 }
 
 
-class GestureController:
+class GestureController(QObject):
+    frame_ready = Signal(object)
+    status_updated = Signal(bool, bool, bool, float)
+    gesture_detected = Signal(str, float, str, str)
+    camera_error = Signal(str)
+
     def __init__(self, camera_index: int = 0):
+        super().__init__()
         self.camera_index = camera_index
         self.running = False
         self.camera_enabled = False
@@ -53,16 +60,26 @@ class GestureController:
         self._last_click_time = 0.0
         self._last_navigation_time = 0.0
         self._last_gesture_time = 0.0
+        self._last_pinch_time = 0.0
+        self._last_pinch_distance = 0.0
         self._debounce_seconds = 0.75
         self._pinch_threshold = 0.08
         self._swipe_min_distance = 0.24
         self._screen_width, self._screen_height = self._get_screen_size()
         self._imports_ready = False
         self._cv2 = None
+        self._mp = None
+        self._python_vision = None
         self._hand_landmarker = None
         self._mp_image = None
         self._init_error = None  # Store initialization errors
         self._camera = None
+        self._frame_lock = threading.Lock()
+        self._latest_frame = None
+        self._last_gesture = ""
+        self._is_hand_detected = False
+        self._is_camera_connected = False
+        self._action_callback = None
 
     def _get_screen_size(self):
         try:
@@ -265,6 +282,7 @@ class GestureController:
             return
 
         self.running = True  # Mark as running after successful initialization
+        self._is_camera_connected = True
         self._camera_ready.set()
         
         while not self._stop_requested:
@@ -272,36 +290,41 @@ class GestureController:
                 ret, frame = cap.read()
                 if not ret:
                     logger.warning("Failed to read frame from camera, retrying...")
+                    self._notify_status(False, False, False, 0.0)
                     time.sleep(0.1)
                     continue
 
-                # Skip hand detection if landmarker failed to initialize
-                if not self._hand_landmarker:
-                    self._last_positions.clear()
+                with self._frame_lock:
+                    self._latest_frame = frame.copy()
+                self.frame_ready.emit(frame.copy())
+
+                if not self._hand_landmarker or not self.gesture_enabled:
+                    self._notify_status(True, False, False, 0.0)
                     time.sleep(0.02)
                     continue
 
-                # Convert frame to RGB
                 frame_rgb = self._cv2.cvtColor(frame, self._cv2.COLOR_BGR2RGB)
                 h, w, c = frame_rgb.shape
-                
-                # Convert to MediaPipe Image
                 mp_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=frame_rgb)
-                
-                # Detect hand landmarks
                 detection_result = self._hand_landmarker.detect(mp_image)
-                
+
                 if detection_result and detection_result.hand_landmarks:
                     landmarks = detection_result.hand_landmarks[0]
-                    # Convert landmarks to normalized coordinates for gesture processing
                     normalized_landmarks = self._normalize_landmarks(landmarks, h, w)
                     self._register_position(normalized_landmarks)
-                    self._process_hand(normalized_landmarks)
+                    self._is_hand_detected = True
+                    if self.gesture_enabled:
+                        self._process_hand(normalized_landmarks)
+                    confidence = self._gesture_confidence(normalized_landmarks)
+                    self._notify_status(True, True, self.gesture_enabled, confidence)
                 else:
+                    self._is_hand_detected = False
                     self._last_positions.clear()
+                    self._notify_status(True, False, self.gesture_enabled, 0.0)
             except Exception as e:
                 logger.error(f"Hand detection error: {e}")
                 self._last_positions.clear()
+                self._notify_status(True, False, self.gesture_enabled, 0.0)
 
             time.sleep(0.02)
 
@@ -309,8 +332,9 @@ class GestureController:
         if self._hand_landmarker:
             try:
                 self._hand_landmarker.close()
-            except:
+            except Exception:
                 pass
+        self._is_camera_connected = False
         self.running = False
 
     def _download_model(self):
@@ -371,27 +395,192 @@ class GestureController:
         index_tip = landmarks.landmark[HAND_LANDMARKS["INDEX_FINGER_TIP"]]
         self._last_positions.append((time.time(), index_tip.x, index_tip.y))
 
-    def _process_hand(self, landmarks) -> None:
+    def set_action_callback(self, callback):
+        self._action_callback = callback
+
+    def _emit_frame(self, frame):
+        if self.frame_ready is not None:
+            try:
+                self.frame_ready.emit(frame)
+            except Exception as e:
+                logger.debug(f"Frame emit failed: {e}")
+
+    def _notify_status(self, camera_connected: bool, hand_detected: bool, gesture_active: bool, confidence: float):
+        if self.status_updated is not None:
+            try:
+                self.status_updated.emit(camera_connected, hand_detected, gesture_active, confidence)
+            except Exception as e:
+                logger.debug(f"Status emit failed: {e}")
+
+    def _emit_gesture_event(self, name: str, confidence: float, action_label: str, command: str):
+        now = time.time()
+        if name == self._last_gesture and now - self._last_gesture_time < self._debounce_seconds:
+            return
+        self._last_gesture = name
+        self._last_gesture_time = now
+        if self.gesture_detected is not None:
+            try:
+                self.gesture_detected.emit(name, confidence, action_label, command)
+            except Exception as e:
+                logger.debug(f"Gesture emit failed: {e}")
+
+    def _gesture_action_label(self, gesture_name: str) -> str:
+        return {
+            "Open Palm": "Activate Jarvis",
+            "Closed Fist": "Stop Listening",
+            "Thumbs Up": "Confirm",
+            "Thumbs Down": "Cancel",
+            "Swipe Left": "Previous Screen",
+            "Swipe Right": "Next Screen",
+            "Two Fingers Up": "Open Settings",
+            "Three Fingers Up": "Open Dashboard",
+            "Pinch In": "Minimize Window",
+            "Pinch Out": "Maximize Window",
+            "Peace Sign": "Open Workflow",
+            "Four Fingers Up": "Open App Launcher",
+        }.get(gesture_name, "Gesture Detected")
+
+    def _gesture_command(self, gesture_name: str) -> str:
+        return {
+            "Open Palm": "activate jarvis",
+            "Closed Fist": "stop listening",
+            "Thumbs Up": "yes",
+            "Thumbs Down": "cancel",
+            "Swipe Left": "previous screen",
+            "Swipe Right": "next screen",
+            "Two Fingers Up": "open settings",
+            "Three Fingers Up": "open dashboard",
+            "Pinch In": "minimize window",
+            "Pinch Out": "maximize window",
+            "Peace Sign": "open workflow",
+            "Four Fingers Up": "open app launcher",
+        }.get(gesture_name, "")
+
+    def _execute_gesture_action(self, gesture_name: str, action_text: str):
+        if not gesture_name:
+            return
+        if action_text and self._action_callback:
+            try:
+                self._action_callback(action_text)
+            except Exception as e:
+                logger.error(f"Gesture action callback failed: {e}")
+
+        if gesture_name == "Pinch In":
+            try:
+                import pyautogui
+                pyautogui.hotkey("win", "down")
+            except Exception as e:
+                logger.error(f"Pinch In system command failed: {e}")
+        elif gesture_name == "Pinch Out":
+            try:
+                import pyautogui
+                pyautogui.hotkey("win", "up")
+            except Exception as e:
+                logger.error(f"Pinch Out system command failed: {e}")
+
+    def _classify_gesture(self, landmarks):
+        thumbs = self._thumb_extended(landmarks)
+        index = self._finger_extended(landmarks, HAND_LANDMARKS["INDEX_FINGER_TIP"], HAND_LANDMARKS["INDEX_FINGER_PIP"])
+        middle = self._finger_extended(landmarks, HAND_LANDMARKS["MIDDLE_FINGER_TIP"], HAND_LANDMARKS["MIDDLE_FINGER_PIP"])
+        ring = self._finger_extended(landmarks, HAND_LANDMARKS["RING_FINGER_TIP"], HAND_LANDMARKS["RING_FINGER_PIP"])
+        pinky = self._finger_extended(landmarks, HAND_LANDMARKS["PINKY_TIP"], HAND_LANDMARKS["PINKY_PIP"])
+
+        if self._is_closed_fist(thumbs, index, middle, ring, pinky):
+            return "Closed Fist", 0.96
+        if self._is_thumb_up(landmarks, thumbs, index, middle, ring, pinky):
+            return "Thumbs Up", 0.94
+        if self._is_thumb_down(landmarks, thumbs, index, middle, ring, pinky):
+            return "Thumbs Down", 0.94
+        if self._is_four_fingers(thumbs, index, middle, ring, pinky):
+            return "Four Fingers Up", 0.92
+        if self._is_three_fingers(index, middle, ring, pinky):
+            return "Three Fingers Up", 0.92
+        if self._is_two_fingers(index, middle, ring, pinky):
+            return "Two Fingers Up", 0.92
+        if self._is_peace_sign(index, middle, ring, pinky, landmarks):
+            return "Peace Sign", 0.93
+        if self._is_pinch_in(landmarks):
+            return "Pinch In", 0.95
+        if self._is_pinch_out(landmarks):
+            return "Pinch Out", 0.95
         if self._is_open_palm(landmarks):
-            if not self.paused:
-                logger.info("Open palm detected. Pausing gesture actions.")
-            self.paused = True
-            self._last_positions.clear()
-            return
+            return "Open Palm", 0.96
+        return "", 0.0
 
-        if self.paused:
-            logger.info("Gesture actions resumed.")
-        self.paused = False
+    def _gesture_confidence(self, landmarks) -> float:
+        gesture_name, confidence = self._classify_gesture(landmarks)
+        return confidence
 
-        if self._is_thumb_index_pinch(landmarks):
-            self._perform_click("left")
-            self._last_positions.clear()
-            return
+    def _is_closed_fist(self, thumbs, index, middle, ring, pinky) -> bool:
+        return not any((thumbs, index, middle, ring, pinky))
 
-        if self._is_index_middle_pinch(landmarks):
-            self._perform_click("right")
-            self._last_positions.clear()
-            return
+    def _is_two_fingers(self, index, middle, ring, pinky) -> bool:
+        return index and middle and not ring and not pinky
+
+    def _is_three_fingers(self, index, middle, ring, pinky) -> bool:
+        return index and middle and ring and not pinky
+
+    def _is_four_fingers(self, thumbs, index, middle, ring, pinky) -> bool:
+        return not thumbs and index and middle and ring and pinky
+
+    def _is_peace_sign(self, index, middle, ring, pinky, landmarks) -> bool:
+        if not (index and middle and not ring and not pinky):
+            return False
+        distance = self._distance(
+            landmarks.landmark[HAND_LANDMARKS["INDEX_FINGER_TIP"]],
+            landmarks.landmark[HAND_LANDMARKS["MIDDLE_FINGER_TIP"]],
+        )
+        return distance > self._hand_size(landmarks) * 0.25
+
+    def _is_thumb_up(self, landmarks, thumbs, index, middle, ring, pinky) -> bool:
+        if not thumbs or index or middle or ring or pinky:
+            return False
+        thumb_tip = landmarks.landmark[HAND_LANDMARKS["THUMB_TIP"]]
+        wrist = landmarks.landmark[HAND_LANDMARKS["WRIST"]]
+        return thumb_tip.y < wrist.y
+
+    def _is_thumb_down(self, landmarks, thumbs, index, middle, ring, pinky) -> bool:
+        if not thumbs or index or middle or ring or pinky:
+            return False
+        thumb_tip = landmarks.landmark[HAND_LANDMARKS["THUMB_TIP"]]
+        wrist = landmarks.landmark[HAND_LANDMARKS["WRIST"]]
+        return thumb_tip.y > wrist.y
+
+    def _thumb_extended(self, landmarks) -> bool:
+        thumb_tip = landmarks.landmark[HAND_LANDMARKS["THUMB_TIP"]]
+        thumb_mcp = landmarks.landmark[HAND_LANDMARKS["THUMB_MCP"]]
+        return self._distance(thumb_tip, thumb_mcp) > self._hand_size(landmarks) * 0.36
+
+    def _is_pinch_in(self, landmarks) -> bool:
+        thumb_tip = landmarks.landmark[HAND_LANDMARKS["THUMB_TIP"]]
+        index_tip = landmarks.landmark[HAND_LANDMARKS["INDEX_FINGER_TIP"]]
+        distance = self._distance(thumb_tip, index_tip)
+        self._last_pinch_distance = distance
+        if distance < self._pinch_threshold:
+            self._last_pinch_time = time.time()
+            return True
+        return False
+
+    def _is_pinch_out(self, landmarks) -> bool:
+        thumb_tip = landmarks.landmark[HAND_LANDMARKS["THUMB_TIP"]]
+        index_tip = landmarks.landmark[HAND_LANDMARKS["INDEX_FINGER_TIP"]]
+        distance = self._distance(thumb_tip, index_tip)
+        now = time.time()
+        if self._last_pinch_time and now - self._last_pinch_time < 1.0:
+            if distance > self._pinch_threshold * 2 and self._last_pinch_distance < self._pinch_threshold:
+                self._last_pinch_time = 0.0
+                return True
+        self._last_pinch_distance = distance
+        return False
+
+    def _process_hand(self, landmarks) -> None:
+        gesture_name, confidence = self._classify_gesture(landmarks)
+
+        if gesture_name:
+            action_label = self._gesture_action_label(gesture_name)
+            action_text = self._gesture_command(gesture_name)
+            self._emit_gesture_event(gesture_name, confidence, action_label, action_text)
+            self._execute_gesture_action(gesture_name, action_text)
 
         if self._finger_extended(
             landmarks,
@@ -460,12 +649,15 @@ class GestureController:
             return
 
         if dx > 0:
+            gesture_name = "Swipe Right"
             self._navigate_forward()
         else:
+            gesture_name = "Swipe Left"
             self._navigate_back()
 
         self._last_navigation_time = time.time()
         self._last_positions.clear()
+        self._emit_gesture_event(gesture_name, 0.92, self._gesture_action_label(gesture_name), self._gesture_command(gesture_name))
 
     def _navigate_back(self) -> None:
         try:

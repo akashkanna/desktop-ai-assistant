@@ -28,13 +28,11 @@ class SpeechToText:
         self.recognizer.dynamic_energy_threshold = True
         self.recognizer.pause_threshold = 0.8  # shorter pause = faster response
 
-    def listen(self, timeout=5, phrase_time_limit=12, stop_event=None) -> str:
+    def listen(self, timeout=5, phrase_time_limit=12) -> str:
         """
         Blocks until speech is detected or timeout elapses.
         Returns transcribed text or empty string.
         """
-        if stop_event is not None and getattr(stop_event, "is_set", lambda: False)():
-            return ""
         try:
             with sr.Microphone() as source:
                 logger.info("Listening…")
