@@ -14,6 +14,7 @@ from core.task_monitor import TaskMonitor
 from core.notification_manager import NotificationManager
 from core.plugin_manager import PluginManager
 from gesture import GestureController
+from voice.microphone_monitor import MicrophoneMonitor
 from voice.text_to_speech import TextToSpeech
 from voice.speech_to_text import SpeechToText
 from logger_config import setup_logger
@@ -39,6 +40,7 @@ class AssistantController:
 
         self.tts = TextToSpeech()
         self.stt = SpeechToText()
+        self.mic_monitor = MicrophoneMonitor(bar_count=36)
 
         self.is_listening = False
         self.listen_thread = None
@@ -295,6 +297,7 @@ class AssistantController:
         if self.is_listening:
             return
         self.is_listening = True
+        self.mic_monitor.start()
         self.update_ui(status="Listening…", avatar_state="listening")
 
         if self.listen_thread and self.listen_thread.is_alive():
@@ -311,4 +314,5 @@ class AssistantController:
 
     def stop_listening(self):
         self.is_listening = False
+        self.mic_monitor.stop()
         self.update_ui(status="Idle", avatar_state="idle")

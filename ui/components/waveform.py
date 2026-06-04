@@ -1,47 +1,46 @@
 """Animated audio waveform visualization."""
 
-import math
-import random
+from typing import Iterable
 
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter, QColor, QLinearGradient, QBrush
 
 from ui.theme.theme_manager import Colors
 
 
 class WaveformWidget(QWidget):
-    """Horizontal bar waveform for listening/speaking states."""
+    """Horizontal bar waveform for live microphone energy."""
 
     def __init__(self, bar_count: int = 24, parent=None):
         super().__init__(parent)
-        self._bars = [0.15] * bar_count
+        self._bars = [0.0] * bar_count
         self._active = False
-        self._tick = 0.0
+        self._level_pct = 0
         self.setMinimumHeight(20)
         self.setMaximumHeight(28)
         self.setAttribute(Qt.WA_OpaquePaintEvent, True)
 
-        self._timer = QTimer(self)
-        self._timer.setInterval(33)
-        self._timer.timeout.connect(self._on_tick)
-
     def set_active(self, active: bool):
         self._active = active
-        if active:
-            self._timer.start()
-        else:
-            self._timer.stop()
-            self._bars = [0.12] * len(self._bars)
+        if not active:
+            self._bars = [0.0] * len(self._bars)
+            self._level_pct = 0
             self.update()
 
-    def _on_tick(self):
-        self._tick += 0.08
-        for i in range(len(self._bars)):
-            if self._active:
-                self._bars[i] = 0.15 + abs(math.sin(self._tick * 4 + i * 0.45)) * 0.85
-            else:
-                self._bars[i] = 0.12
+    def set_levels(self, levels: Iterable[float], level_pct: float = 0.0):
+        if not self._active:
+            return
+
+        if len(levels) != len(self._bars):
+            levels = list(levels)[: len(self._bars)]
+            levels += [0.0] * (len(self._bars) - len(levels))
+
+        for i, target in enumerate(levels):
+            target = max(0.0, min(1.0, target))
+            self._bars[i] += (target - self._bars[i]) * 0.24
+
+        self._level_pct = int(round(max(0.0, min(100.0, level_pct))))
         self.update()
 
     def paintEvent(self, event):
@@ -63,4 +62,8 @@ class WaveformWidget(QWidget):
             p.setPen(Qt.NoPen)
             p.setBrush(QBrush(grad))
             p.drawRoundedRect(int(x), int(y), bar_w, int(bar_h), 2, 2)
+
+        if self._level_pct > 0:
+            p.setPen(QColor(Colors.TEXT_MUTED))
+            p.drawText(w - 56, 12, f"{self._level_pct}%")
         p.end()

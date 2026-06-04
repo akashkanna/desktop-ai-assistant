@@ -102,6 +102,8 @@ class MainWindow(FramelessWindow):
         self._wire_events()
 
         self.controller = AssistantController(ui_callback=self._controller_cb)
+        self.controller.mic_monitor.levels_updated.connect(self._on_mic_levels)
+        self.controller.mic_monitor.status_updated.connect(self._on_mic_status)
         self._apply_settings_to_ui()
         self._refresh_workflows()
         self._monitor.start()
@@ -224,6 +226,19 @@ class MainWindow(FramelessWindow):
     def _on_metrics(self, metrics):
         self.dashboard.system_monitor.update_metrics(metrics)
         self.dashboard.ai_status.set_health(int(metrics.assistant_health))
+
+    @Slot(list, float, float, float)
+    def _on_mic_levels(self, levels, rms, peak, level_pct):
+        self.dashboard.hero.waveform.set_levels(levels, level_pct)
+        self.command_dock.waveform.set_levels(levels, level_pct)
+        if self.controller.is_listening:
+            self.command_dock.set_status(f"Listening… {int(level_pct)}%")
+
+    @Slot(str)
+    def _on_mic_status(self, status: str):
+        self.dashboard.hero.set_voice_status(status)
+        if not self.controller.is_listening:
+            self.command_dock.set_status(status)
 
     def _apply_settings_to_ui(self):
         assistant = self._settings.get("assistant", {})
