@@ -53,6 +53,8 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
+> The project now includes desktop keyboard shortcut automation for common clipboard commands like copy/paste/cut.
+
 ### Run the Application
 
 ```powershell
@@ -160,15 +162,24 @@ These are UI hooks ready for API key configuration.
 
 Jarvis supports a wide range of commands through natural language.
 
-### 1. System & Power Controls
+### 1. Clipboard & Shortcut Commands
 
-* **Sleep Mode:** `"Put my PC to sleep"`, `"Sleep mode"`, `"Standby"`
-* **Lock Screen:** `"Lock the screen"`, `"Lock my PC"`
-* **Shutdown:** `"Shut down the computer"`, `"Power off my system"`
-* **Restart:** `"Restart my PC"`, `"Reboot the system"`
-* **Cancel Actions:** `"Cancel shutdown"`, `"Abort shutdown"`
+* **COPY:** "copy", "copy this", "copy selected text", "duplicate selection" → `Ctrl+C`
+* **PASTE:** "paste", "paste here", "insert clipboard", "paste copied text" → `Ctrl+V`
+* **CUT:** "cut", "cut this", "cut selection", "move this text" → `Ctrl+X`
 
-### 2. Window & Application Management
+You can customize and extend all keyboard shortcuts by editing `config/shortcuts.json`.
+Run `scripts/export_shortcuts.py` to generate the file with current defaults, then modify mappings as needed.
+
+### 2. System & Power Controls
+
+* **Sleep Mode:** "Put my PC to sleep", "Sleep mode", "Standby"
+* **Lock Screen:** "Lock the screen", "Lock my PC"
+* **Shutdown:** "Shut down the computer", "Power off my system"
+* **Restart:** "Restart my PC", "Reboot the system"
+* **Cancel Actions:** "Cancel shutdown", "Abort shutdown"
+
+### 3. Window & Application Management
 
 * **Open Applications:** `"Open Chrome"`, `"Launch Settings"`, `"Open Notepad"`
 * **Close Applications:** `"Close Chrome"`, `"Quit Spotify"`

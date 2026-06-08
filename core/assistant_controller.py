@@ -3,6 +3,7 @@ Assistant Controller — central brain.
 Wires STT, TTS, Intent Parser, Context, Task Router, and UI signals.
 """
 import threading
+import time
 from core.intent_parser import IntentParser
 from core.context_manager import ContextManager
 from core.clarification_manager import ClarificationManager
@@ -50,7 +51,7 @@ class AssistantController:
     # ─────────────────────────── UI helper ───────────────────────────
 
     def update_ui(self, status=None, user_text=None, assistant_text=None,
-                  is_muted=None, avatar_state=None):
+                  is_muted=None, avatar_state=None, refresh_ui=False):
         if self.ui_callback:
             self.ui_callback(
                 status=status,
@@ -58,6 +59,7 @@ class AssistantController:
                 assistant_text=assistant_text,
                 is_muted=is_muted,
                 avatar_state=avatar_state,
+                refresh_ui=refresh_ui,
             )
 
     def toggle_mute(self):
@@ -274,6 +276,16 @@ class AssistantController:
             self.speak("Cancelled.")
             return
 
+        if parsed.intent == "refresh_ui":
+            task = self.task_monitor.create_task(parsed.intent, message=original_text)
+            self.task_monitor.update_task(task.task_id, "running")
+            self.update_ui(status="Refreshing…", avatar_state="thinking", refresh_ui=True)
+            self.context_manager.update_after_execution(parsed, original_text)
+            result = "Refreshed the dashboard."
+            self.task_monitor.update_task(task.task_id, "completed", message=result)
+            self.speak(result)
+            return
+
         task = self.task_monitor.create_task(parsed.intent, message=original_text)
         self.task_monitor.update_task(task.task_id, "running")
 
@@ -297,22 +309,50 @@ class AssistantController:
         if self.is_listening:
             return
         self.is_listening = True
+        self.stt._abort_event.clear()
         self.mic_monitor.start()
         self.update_ui(status="Listening…", avatar_state="listening")
 
         if self.listen_thread and self.listen_thread.is_alive():
             return
 
-        def _loop():
-            while self.is_listening:
-                text = self.stt.listen()
-                if text and self.is_listening:
-                    self.process_text_input(text)
-
-        self.listen_thread = threading.Thread(target=_loop, daemon=True)
+        self.listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
         self.listen_thread.start()
 
     def stop_listening(self):
+        was_listening = self.is_listening
         self.is_listening = False
+        self.stt.abort_listen()
         self.mic_monitor.stop()
-        self.update_ui(status="Idle", avatar_state="idle")
+        if was_listening:
+            self.update_ui(status="Idle", avatar_state="idle")
+            logger.info("Voice listening stopped.")
+
+    def _listen_loop(self):
+        """Persistent loop — idle-waits when not listening, exits only on app shutdown."""
+        while True:
+            if not self.is_listening:
+                time.sleep(0.15)
+                continue
+
+            with self.tts._audio_lock:
+                text = self.stt.listen(
+                    timeout=10,
+                    phrase_time_limit=15,
+                    should_continue=lambda: self.is_listening,
+                )
+
+            if not self.is_listening:
+                continue
+
+            if text:
+                self.process_text_input(text)
+
+    def shutdown(self):
+        self.is_listening = False
+        self.stt.abort_listen()
+        self.stop_listening()
+        try:
+            self.tts.shutdown()
+        except Exception as e:
+            logger.warning(f"Assistant shutdown error: {e}")

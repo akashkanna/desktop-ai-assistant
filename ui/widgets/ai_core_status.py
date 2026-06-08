@@ -51,7 +51,7 @@ class StatusRow(QFrame):
         self._val = val
         self._name = name
 
-    def update(self, online: bool, detail: str):
+    def update_status(self, online: bool, detail: str):
         detail_lower = detail.lower()
         if not online or any(word in detail_lower for word in ("off", "error", "fail", "unavailable")):
             color = Colors.DANGER
@@ -100,20 +100,20 @@ class AiCoreStatusPanel(QFrame):
         for key, reg_name in mapping.items():
             item = items.get(reg_name)
             if item and key in self._rows:
-                self._rows[key].update(item.connected, item.model)
+                self._rows[key].update_status(item.connected, item.model)
 
-        self._rows["model"].update(True, self._registry.primary_model_label())
-        self._rows["memory"].update(True, "JSON Store Active")
-        self._rows["health"].update(True, "100%")
+        self._rows["model"].update_status(True, self._registry.primary_model_label())
+        self._rows["memory"].update_status(True, "JSON Store Active")
+        self._rows["health"].update_status(True, "100%")
 
     def set_health(self, pct: int):
-        self._rows["health"].update(pct >= 80, f"{pct}%")
+        self._rows["health"].update_status(pct >= 80, f"{pct}%")
 
     def set_voice(self, online: bool, detail: str):
-        self._rows["voice"].update(online, detail)
+        self._rows["voice"].update_status(online, detail)
 
     def set_gesture(self, online: bool, detail: str):
-        self._rows["gesture"].update(online, detail)
+        self._rows["gesture"].update_status(online, detail)
 
     def set_memory(self, detail: str):
-        self._rows["memory"].update(True, detail)
+        self._rows["memory"].update_status(True, detail)

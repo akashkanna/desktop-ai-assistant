@@ -45,3 +45,4 @@ sounddevice>=0.4.8
 
 # System info
 psutil>=5.9.6
+keyboard>=0.13.5

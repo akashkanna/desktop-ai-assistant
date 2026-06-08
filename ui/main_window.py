@@ -229,10 +229,11 @@ class MainWindow(FramelessWindow):
 
     @Slot(list, float, float, float)
     def _on_mic_levels(self, levels, rms, peak, level_pct):
+        if not self.controller.is_listening:
+            return
         self.dashboard.hero.waveform.set_levels(levels, level_pct)
         self.command_dock.waveform.set_levels(levels, level_pct)
-        if self.controller.is_listening:
-            self.command_dock.set_status(f"Listening… {int(level_pct)}%")
+        self.command_dock.set_status(f"Listening… {int(level_pct)}%")
 
     @Slot(str)
     def _on_mic_status(self, status: str):
@@ -269,6 +270,8 @@ class MainWindow(FramelessWindow):
             self.sig_mute.emit(kwargs["is_muted"])
         if kwargs.get("avatar_state") is not None:
             self.sig_avatar.emit(kwargs["avatar_state"])
+        if kwargs.get("refresh_ui"):
+            QTimer.singleShot(0, self._refresh_ui)
 
     @Slot(str)
     def _on_status(self, status: str):
@@ -328,9 +331,14 @@ class MainWindow(FramelessWindow):
     def _toggle_listen(self):
         if self.controller.is_listening:
             self.controller.stop_listening()
+            self.command_dock.set_listening(False)
+            self.dashboard.hero.set_state("idle")
+            self.dashboard.hero.waveform.set_active(False)
+            self.command_dock.waveform.set_active(False)
             self._activity.log("Voice listening stopped", "voice", "⏸")
         else:
             self.controller.start_listening()
+            self.command_dock.set_listening(True)
             self._activity.log("Voice listening started", "voice", "▶")
 
     def _toggle_mute(self):
@@ -416,6 +424,12 @@ class MainWindow(FramelessWindow):
 
     def _refresh_workflows(self):
         self.dashboard.workflow.refresh_workflows(self.controller.workflow_engine.list_workflows())
+
+    def _refresh_ui(self):
+        self._refresh_workflows()
+        self.dashboard.ai_status.refresh()
+        self.dashboard.updateGeometry()
+        self.dashboard.repaint()
 
     def _save_workflow(self, name, trigger, steps_raw):
         if not name or not steps_raw:

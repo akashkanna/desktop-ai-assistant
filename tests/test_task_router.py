@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 from unittest.mock import MagicMock, patch
+from core.intent_parser import ParsedIntent
 
 
 def make_router():
@@ -72,6 +73,58 @@ class TestTaskRouter:
         success, msg = router.route(intent)
         assert success
         ctx.clear_pending_confirmation.assert_called()
+
+    @patch("core.task_router.keyboard.press_and_release")
+    def test_copy_cut_paste_shortcuts(self, mock_press):
+        router, _ = make_router()
+
+        for intent, combo in [("copy", "ctrl+c"), ("cut", "ctrl+x"), ("paste", "ctrl+v")]:
+            parsed = {
+                "intent": intent,
+                "confidence": 0.95,
+                "entities": {},
+                "requires_confirmation": False,
+                "missing_fields": [],
+                "response": ""
+            }
+            success, msg = router.route(parsed)
+            assert success
+            assert "executed" in msg.lower()
+            mock_press.assert_any_call(combo)
+
+        assert mock_press.call_count == 3
+
+    @patch("core.task_router.keyboard.press_and_release")
+    def test_unknown_raw_copy_fallback(self, mock_press):
+        router, _ = make_router()
+        parsed = {
+            "intent": "unknown",
+            "confidence": 0.0,
+            "entities": {"raw": "copy copy"},
+            "requires_confirmation": False,
+            "missing_fields": [],
+            "response": ""
+        }
+        success, msg = router.route(parsed)
+        assert success
+        assert "executed" in msg.lower()
+        mock_press.assert_called_once_with("ctrl+c")
+
+    @patch("core.task_router.keyboard.press_and_release")
+    def test_unknown_raw_refresh_fallback(self, mock_press):
+        router, _ = make_router()
+        parsed = {
+            "intent": "unknown",
+            "confidence": 0.0,
+            "entities": {"raw": "refresh refresh"},
+            "requires_confirmation": False,
+            "missing_fields": [],
+            "response": ""
+        }
+        success, msg = router.route(parsed)
+        assert success
+        assert "executed" in msg.lower()
+        mock_press.assert_called_once_with("f5")
 
     def test_requires_confirmation_sets_pending(self):
         router, ctx = make_router()

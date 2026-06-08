@@ -5,6 +5,7 @@ No external AI API required (offline-first design).
 """
 import re
 from typing import Optional
+from core.command_normalizer import normalize_command_text, resolve_app_name
 from logger_config import setup_logger
 
 logger = setup_logger("intent_parser")
@@ -15,9 +16,11 @@ logger = setup_logger("intent_parser")
 # -----------------------------------------------------------------------
 INTENT_PATTERNS = [
 
-    # ── Chit-chat / conversational (check early to avoid being swallowed) ──
+    # ── Chit-chat / conversational (standalone greetings only) ──
     ("greeting",
-     [r"^(hello|hi|hey|good\s+morning|good\s+afternoon|good\s+evening|howdy)\b"],
+     [r"^(hello|hi|howdy)(?:\s+there)?[!.]?\s*$",
+      r"^hey(?:\s+there)?[!.]?\s*$",
+      r"^good\s+(morning|afternoon|evening)[!.]?\s*$"],
      []),
 
     ("ask_name",
@@ -115,6 +118,40 @@ INTENT_PATTERNS = [
      [r"(take\s+(?:a\s+)?screenshot|capture\s+(?:the\s+)?screen|screenshot)"],
      []),
 
+    ("refresh_ui",
+     [r"(?:please\s+)?(?:refresh|reload|update)(?:\s+(?:the\s+)?(?:screen|page|window|dashboard|display|interface))?",
+      r"(?:please\s+)?(?:refresh|reload)(?:\s+(?:refresh|reload))+(?:\s+(?:screen|page|window|dashboard|display|interface))?",
+      r"(?:please\s+)?(?:update\s+screen|update\s+dashboard|update\s+interface)"],
+     []),
+
+    ("copy",
+     [r"(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|hey\s+jarvis\s+|jarvis\s+)?(?:copy|copy\s+this|copy\s+selected\s+text|copy\s+selection|copy\s+that|duplicate\s+selection|grab\s+this\s+text|grab\s+selected\s+text|copy\s+highlighted\s+text|copy\s+current\s+selection|copy\s+content|copy\s+control\s+c)"],
+     []),
+
+    ("cut",
+     [r"(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|hey\s+jarvis\s+|jarvis\s+)?(?:cut|cut\s+this|cut\s+selection|cut\s+selected\s+text|remove\s+and\s+copy|move\s+this\s+text|cut\s+highlighted\s+text|cut\s+control\s+x)"],
+     []),
+
+    ("paste",
+     [r"(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|hey\s+jarvis\s+|jarvis\s+)?(?:paste|paste\s+here|paste\s+it|insert\s+clipboard|paste\s+copied\s+text|insert\s+copied\s+content|put\s+it\s+here|paste\s+content|paste\s+now|paste\s+control\s+v)"],
+     []),
+
+    ("select_all",
+     [r"(?:please\s+)?(?:select|highlight)(?:\s+all|\s+everything)?",
+      r"select\s+all",
+      r"highlight\s+all",
+      r"select\s+everything"],
+     []),
+
+    ("hard_refresh",
+     [r"(?:please\s+)?(?:hard\s+refresh|force\s+refresh|refresh\s+hard|reload\s+force|reload\s+hard)"],
+     []),
+
+    ("refresh",
+     [r"(?:please\s+)?(?:refresh|reload)(?:\s+page)?",
+      r"(?:please\s+)?(?:refresh|reload)\s+this\s+page"],
+     []),
+
     # ── WhatsApp messaging ─────────────────────────────────────────────
     ("send_whatsapp_message",
      [r"send\s+(?:whatsapp\s+)?(?:message\s+)?to\s+(\w[\w\s]*)\s+saying\s+(.+)",
@@ -132,10 +169,11 @@ INTENT_PATTERNS = [
       r"youtube\s+(.+)"],
      ["query"]),
 
-    # ── Web search ─────────────────────────────────────────────────────
+    # ── Web search (require explicit search verbs — not bare 'google') ──
     ("search_web",
      [r"search\s+(?:for\s+)?(.+?)\s+on\s+(google|bing|youtube|yahoo)",
-      r"(?:google|look\s+up|search\s+for|find)\s+(.+)"],
+      r"(?:google|bing|yahoo)\s+search\s+(?:for\s+)?(.+)",
+      r"(?:look\s+up|search\s+for|find)\s+(.+)"],
      ["query"]),
 
     # ── Website / browser ──────────────────────────────────────────────
@@ -214,12 +252,10 @@ INTENT_PATTERNS = [
      [r"(?:scroll|go)\s+(?:to\s+)?bottom",
       r"swipe\s+down"],
      []),
-    # ── Open application (LAST — very broad pattern) ───────────────────
+    # ── Open application (flexible natural phrasing) ───────────────────
     ("open_application",
-     [r"open\s+(.+)",
-      r"launch\s+(.+)",
-      r"start\s+(.+)",
-      r"run\s+(.+)"],
+     [r"(?:open|launch|start|run)\s+(?:the\s+|a\s+|an\s+|my\s+)?(.+?)(?:\s+app|\s+application|\s+program)?\s*$",
+      r"(?:open|launch|start|run)\s+(.+)"],
      ["application"]),
 
     # ── Help ───────────────────────────────────────────────────────────
@@ -260,7 +296,8 @@ def _extract_entities(intent: str, match: re.Match, raw: str) -> dict:
     entities: dict = {}
 
     if intent == "open_application":
-        entities["application"] = _clean(groups[0], SKIP_WORDS_APP) if groups else ""
+        raw_app = groups[0] if groups else ""
+        entities["application"] = resolve_app_name(_clean(raw_app, SKIP_WORDS_APP))
 
     elif intent == "close_application":
         raw_app = groups[0] if groups else ""
@@ -430,8 +467,12 @@ class IntentParser:
 
     def parse(self, text: str) -> ParsedIntent:
         """Parse raw text into a ParsedIntent."""
-        text = text.strip()
-        logger.debug(f"Parsing: '{text}'")
+        original = text.strip()
+        text = normalize_command_text(original)
+        if not text:
+            text = original.lower().strip()
+        text = re.sub(r"\b(\w+)(?:\s+\1)+\b", r"\1", text)
+        logger.debug(f"Parsing: '{text}' (raw: '{original}')")
 
         for intent, pattern, required in self._compiled:
             match = pattern.search(text)
