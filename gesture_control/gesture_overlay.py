@@ -310,7 +310,8 @@ class GestureFloatingHUD(QWidget):
         
         layout.addWidget(card)
 
-    def update_hud(self, telemetry):
+    @Slot(object, dict)
+    def update_hud(self, _cv_frame, telemetry):
         """Updates fields on the floating overlay panel."""
         mode = telemetry.get("mode", "NO_HAND")
         gesture = telemetry.get("gesture", "None")

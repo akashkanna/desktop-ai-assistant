@@ -139,6 +139,7 @@ INTENT_PATTERNS = [
 
     ("select_all",
      [r"^(?:please\s+)?select\s+all\s*$",
+      r"^(?:please\s+)?select\s*$",
       r"^(?:please\s+)?highlight\s+all\s*$",
       r"^(?:please\s+)?select\s+everything\s*$",
       r"^(?:please\s+)?highlight\s+everything\s*$"],

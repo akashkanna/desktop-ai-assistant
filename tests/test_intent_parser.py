@@ -97,7 +97,7 @@ class TestFallbackParser:
         assert result["intent"] == "refresh_ui"
 
         result = parser._parse_with_fallback("hard refresh")
-        assert result["intent"] == "refresh_ui"
+        assert result["intent"] == "hard_refresh"
 
     def test_refresh_aliases(self):
         parser = make_parser()

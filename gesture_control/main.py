@@ -324,6 +324,12 @@ class GestureManager(QObject):
                 telemetry["mode"] = GestureState.NO_HAND
                 telemetry["failure_reason"] = self.debug_status["failure_reason"]
 
+            # Merge camera/tracker debug fields for dashboard telemetry panel
+            telemetry["camera_frame_received"] = self.debug_status["camera_frame_received"]
+            telemetry["rgb_conversion"] = self.debug_status["rgb_conversion"]
+            if "failure_reason" not in telemetry or telemetry.get("failure_reason") is None:
+                telemetry["failure_reason"] = self.debug_status["failure_reason"]
+
             # Emit frames and telemetry
             self.frame_ready.emit(frame)
             self.telemetry_updated.emit(frame, telemetry)
