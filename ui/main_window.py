@@ -16,9 +16,10 @@ from PySide6.QtCore import Signal, Slot, QTimer, Qt
 from core.assistant_controller import AssistantController
 from ui.components.base import FramelessWindow
 from ui.components.header import HeaderBar
-from ui.widgets import CollapsibleSidebar, CommandDock
+from ui.widgets import PremiumSidebar, CommandDock
 from ui.pages.dashboard_page import DashboardPage
 from ui.pages.placeholder_page import PlaceholderPage, ChatLogPanel
+from ui.pages.gesture_page import GesturePage
 from ui.theme.theme_manager import ThemeManager, Colors
 from services.system_monitor_service import SystemMonitorService
 from services.activity_log_service import ActivityLogService
@@ -98,12 +99,14 @@ class MainWindow(FramelessWindow):
         self.sig_mute.connect(self._on_mute)
         self.sig_avatar.connect(self._on_avatar_state)
 
+        self.gesture_hud = None
         self._build_ui()
         self._wire_events()
 
         self.controller = AssistantController(ui_callback=self._controller_cb)
         self.controller.mic_monitor.levels_updated.connect(self._on_mic_levels)
         self.controller.mic_monitor.status_updated.connect(self._on_mic_status)
+        self.gesture_page.wire_telemetry(self.controller.gesture_controller)
         self._apply_settings_to_ui()
         self._refresh_workflows()
         self._monitor.start()
@@ -128,7 +131,7 @@ class MainWindow(FramelessWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        self.sidebar = CollapsibleSidebar()
+        self.sidebar = PremiumSidebar()
         self.sidebar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
 
         splitter = QSplitter(Qt.Horizontal)
@@ -155,13 +158,17 @@ class MainWindow(FramelessWindow):
 
         self._pages: dict[str, int] = {"dashboard": 0}
         for key in (
-            "voice", "gesture", "workflow", "apps", "system",
-            "files", "screenshots", "memory", "logs", "settings", "help",
+            "voice", "gesture", "workflow", "apps", "browser", "system",
+            "files", "screenshots", "memory", "logs", "settings",
         ):
-            page = PlaceholderPage(key)
-            if key == "voice":
-                self._voice_chat = ChatLogPanel()
-                page.add_widget(self._voice_chat)
+            if key == "gesture":
+                self.gesture_page = GesturePage()
+                page = self.gesture_page
+            else:
+                page = PlaceholderPage(key)
+                if key == "voice":
+                    self._voice_chat = ChatLogPanel()
+                    page.add_widget(self._voice_chat)
             self._pages[key] = self.stack.addWidget(page)
 
         content_layout.addWidget(self.stack, stretch=1)
@@ -344,6 +351,20 @@ class MainWindow(FramelessWindow):
     def _toggle_mute(self):
         self.controller.toggle_mute()
 
+    def _update_gesture_hud_visibility(self):
+        from gesture_control.gesture_overlay import GestureFloatingHUD
+        should_show = self._camera_enabled and self._gesture_enabled
+        if should_show:
+            if not self.gesture_hud:
+                self.gesture_hud = GestureFloatingHUD()
+                self.controller.gesture_controller._manager.telemetry_updated.connect(
+                    self.gesture_hud.update_hud
+                )
+            self.gesture_hud.show()
+        else:
+            if self.gesture_hud:
+                self.gesture_hud.hide()
+
     def _toggle_gesture_mode(self):
         gesture = self.controller.gesture_controller
         if gesture.gesture_enabled:
@@ -359,6 +380,7 @@ class MainWindow(FramelessWindow):
             result,
             "gesture", "✋",
         )
+        self._update_gesture_hud_visibility()
 
     def _toggle_camera(self):
         if self._camera_enabled:
@@ -369,6 +391,7 @@ class MainWindow(FramelessWindow):
             self._camera_enabled = self.controller.gesture_controller.camera_enabled
         self.command_dock.set_camera_enabled(self._camera_enabled)
         self._activity.log(result, "gesture", "📷")
+        self._update_gesture_hud_visibility()
 
     def _emergency_stop(self):
         self.controller.stop_listening()
@@ -382,6 +405,7 @@ class MainWindow(FramelessWindow):
         self.command_dock.set_camera_enabled(False)
         self.dashboard.hero.set_gesture_mode(False)
         self._activity.log("Emergency stop — all inputs halted", "system", "⛔")
+        self._update_gesture_hud_visibility()
 
     def _handle_quick_action(self, action: str):
         actions = {
@@ -480,4 +504,9 @@ class MainWindow(FramelessWindow):
     def closeEvent(self, event):
         self.controller.shutdown()
         self._monitor.stop()
+        if hasattr(self, "gesture_hud") and self.gesture_hud:
+            try:
+                self.gesture_hud.close()
+            except Exception:
+                pass
         event.accept()

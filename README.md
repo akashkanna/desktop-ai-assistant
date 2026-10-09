@@ -247,7 +247,9 @@ Hand tracking via MediaPipe + OpenCV:
 pip install opencv-python mediapipe==0.10.35 pyautogui
 ```
 
-MediaPipe 0.10+ requires `hand_landmarker.task` in the `gesture/` folder (auto-downloaded when possible).
+MediaPipe 0.10+ requires `hand_landmarker.task` in the `gesture/` folder.
+If this file is missing, the app can auto-download it from:
+`https://storage.googleapis.com/mediapipe-assets/hand_landmarker.task`
 
 **Camera test:**
 

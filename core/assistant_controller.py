@@ -44,6 +44,7 @@ class AssistantController:
         self.mic_monitor = MicrophoneMonitor(bar_count=36)
 
         self.is_listening = False
+        self._shutting_down = False
         self.listen_thread = None
 
         logger.info("AssistantController initialized.")
@@ -309,10 +310,12 @@ class AssistantController:
         if self.is_listening:
             return
         self.is_listening = True
+        self._shutting_down = False
         self.stt._abort_event.clear()
         self.mic_monitor.start()
         self.update_ui(status="Listening…", avatar_state="listening")
 
+        # Always spawn a fresh thread — the old loop exits on stop
         if self.listen_thread and self.listen_thread.is_alive():
             return
 
@@ -322,20 +325,34 @@ class AssistantController:
     def stop_listening(self):
         was_listening = self.is_listening
         self.is_listening = False
-        self.stt.abort_listen()
+
+        # Force-kill any active microphone stream immediately
+        self.stt.force_stop()
         self.mic_monitor.stop()
+
+        # Wait briefly for the listen thread to acknowledge the stop
+        if was_listening and self.listen_thread and self.listen_thread.is_alive():
+            self.listen_thread.join(timeout=1.0)
+
         if was_listening:
             self.update_ui(status="Idle", avatar_state="idle")
-            logger.info("Voice listening stopped.")
+            logger.info("Voice listening stopped — mic fully released.")
 
     def _listen_loop(self):
-        """Persistent loop — idle-waits when not listening, exits only on app shutdown."""
-        while True:
+        """Listen loop — exits when is_listening is set to False.
+        A new thread is spawned each time start_listening() is called."""
+        logger.info("Listen loop started.")
+        while self.is_listening and not self._shutting_down:
+            # Double-check before acquiring the (potentially blocking) audio lock
             if not self.is_listening:
-                time.sleep(0.15)
-                continue
+                break
 
             with self.tts._audio_lock:
+                # Re-check AFTER acquiring the lock — stop may have been
+                # called while we were waiting for TTS to finish.
+                if not self.is_listening:
+                    break
+
                 text = self.stt.listen(
                     timeout=10,
                     phrase_time_limit=15,
@@ -343,16 +360,18 @@ class AssistantController:
                 )
 
             if not self.is_listening:
-                continue
+                break
 
             if text:
                 self.process_text_input(text)
 
+        logger.info("Listen loop exited.")
+
     def shutdown(self):
-        self.is_listening = False
-        self.stt.abort_listen()
+        self._shutting_down = True
         self.stop_listening()
         try:
             self.tts.shutdown()
         except Exception as e:
             logger.warning(f"Assistant shutdown error: {e}")
+        logger.info("AssistantController shutdown complete.")

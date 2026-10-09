@@ -119,9 +119,10 @@ INTENT_PATTERNS = [
      []),
 
     ("refresh_ui",
-     [r"(?:please\s+)?(?:refresh|reload|update)(?:\s+(?:the\s+)?(?:screen|page|window|dashboard|display|interface))?",
-      r"(?:please\s+)?(?:refresh|reload)(?:\s+(?:refresh|reload))+(?:\s+(?:screen|page|window|dashboard|display|interface))?",
-      r"(?:please\s+)?(?:update\s+screen|update\s+dashboard|update\s+interface)"],
+     [r"^(?:please\s+)?(?:refresh|reload|update)\s+(?:the\s+)?(?:screen|dashboard|display|interface)\s*$",
+      r"^(?:please\s+)?(?:refresh|reload)(?:\s+(?:refresh|reload))+(?:\s+(?:the\s+)?(?:screen|dashboard|display|interface))?\s*$",
+      r"^(?:please\s+)?(?:update\s+screen|update\s+dashboard|update\s+interface)\s*$",
+      r"^(?:refresh|reload)\s*$"],
      []),
 
     ("copy",
@@ -137,10 +138,10 @@ INTENT_PATTERNS = [
      []),
 
     ("select_all",
-     [r"(?:please\s+)?(?:select|highlight)(?:\s+all|\s+everything)?",
-      r"select\s+all",
-      r"highlight\s+all",
-      r"select\s+everything"],
+     [r"^(?:please\s+)?select\s+all\s*$",
+      r"^(?:please\s+)?highlight\s+all\s*$",
+      r"^(?:please\s+)?select\s+everything\s*$",
+      r"^(?:please\s+)?highlight\s+everything\s*$"],
      []),
 
     ("hard_refresh",
@@ -254,8 +255,8 @@ INTENT_PATTERNS = [
      []),
     # ── Open application (flexible natural phrasing) ───────────────────
     ("open_application",
-     [r"(?:open|launch|start|run)\s+(?:the\s+|a\s+|an\s+|my\s+)?(.+?)(?:\s+app|\s+application|\s+program)?\s*$",
-      r"(?:open|launch|start|run)\s+(.+)"],
+     [r"(?:open|launch|start|run|load|access|fire\s+up|boot\s+up|pull\s+up|bring\s+up|show\s+me)\s+(?:the\s+|a\s+|an\s+|my\s+)?(.+?)(?:\s+app|\s+application|\s+program|\s+software)?\s*$",
+      r"(?:open|launch|start|run|load|access)\s+(.+)"],
      ["application"]),
 
     # ── Help ───────────────────────────────────────────────────────────
@@ -492,6 +493,14 @@ class IntentParser:
                 logger.info(f"Matched: {result}")
                 return result
 
+        # ── Fuzzy keyword fallback ────────────────────────────────
+        # Before giving up, try to match the user's text against
+        # known intent keywords using token overlap.
+        fuzzy_result = self._fuzzy_match(text)
+        if fuzzy_result:
+            logger.info(f"Fuzzy matched: {fuzzy_result}")
+            return fuzzy_result
+
         # Unknown intent
         result = ParsedIntent(
             intent="unknown",
@@ -502,6 +511,110 @@ class IntentParser:
         )
         logger.warning(f"No intent matched for: '{text}'")
         return result
+
+    # ── Fuzzy matching ────────────────────────────────────────────
+
+    # Map of intent → sets of keywords that strongly indicate that intent
+    _INTENT_KEYWORDS = {
+        "open_application": {"open", "launch", "start", "run", "load", "access",
+                             "fire", "boot", "pull", "bring", "show"},
+        "close_application": {"close", "quit", "exit", "kill", "end", "terminate",
+                               "shut"},
+        "search_web": {"search", "google", "look", "find", "bing", "yahoo"},
+        "search_youtube": {"youtube", "play", "video"},
+        "open_website": {"website", "site", "browse", "visit", "navigate", "url",
+                          "go", "www", ".com", ".org", ".net"},
+        "volume_control": {"volume", "sound", "loud", "quiet", "louder",
+                           "softer", "mute", "unmute"},
+        "take_screenshot": {"screenshot", "capture", "screen", "snap"},
+        "shutdown": {"shutdown", "shut", "power", "off"},
+        "restart": {"restart", "reboot"},
+        "lock_screen": {"lock"},
+        "minimize_window": {"minimize", "minimise", "min"},
+        "maximize_window": {"maximize", "maximise", "max"},
+        "greeting": {"hello", "hi", "hey", "howdy", "morning", "afternoon",
+                      "evening"},
+        "ask_time": {"time", "clock", "hour"},
+        "ask_date": {"date", "day", "today", "calendar"},
+    }
+
+    def _fuzzy_match(self, text: str):
+        """Try to match the user's text against known intent keywords.
+        Returns a ParsedIntent if a strong enough match is found."""
+        words = set(text.lower().split())
+        if not words:
+            return None
+
+        best_intent = None
+        best_score = 0.0
+
+        for intent, keywords in self._INTENT_KEYWORDS.items():
+            overlap = words & keywords
+            if not overlap:
+                continue
+            # Score = fraction of user words that are keywords
+            score = len(overlap) / max(len(words), 1)
+            if score > best_score:
+                best_score = score
+                best_intent = intent
+
+        # Only accept if at least 30% of words match intent keywords
+        if best_intent and best_score >= 0.30:
+            # Build entities based on the matched intent
+            entities = self._build_fuzzy_entities(best_intent, text, words)
+            confidence = round(min(0.75, 0.50 + best_score * 0.5), 2)
+            needs_confirm = best_intent in CONFIRMATION_INTENTS
+
+            return ParsedIntent(
+                intent=best_intent,
+                confidence=confidence,
+                entities=entities,
+                requires_confirmation=needs_confirm,
+                missing_fields=[]
+            )
+        return None
+
+    def _build_fuzzy_entities(self, intent: str, text: str, words: set) -> dict:
+        """Extract entities for fuzzy-matched intents."""
+        entities = {}
+        action_verbs = {"open", "launch", "start", "run", "load", "access",
+                        "fire", "boot", "pull", "bring", "show", "close",
+                        "quit", "exit", "kill", "end", "terminate", "shut"}
+        noise = {"the", "a", "an", "my", "this", "that", "up", "me", "please",
+                 "can", "you", "could", "would", "will", "for", "just", "it"}
+
+        if intent in ("open_application", "close_application"):
+            # Everything that isn't a verb or noise word is the app name
+            app_words = [w for w in text.split() if w not in action_verbs and w not in noise]
+            from core.command_normalizer import resolve_app_name
+            entities["application"] = resolve_app_name(" ".join(app_words))
+
+        elif intent in ("search_web", "search_youtube"):
+            search_verbs = {"search", "google", "look", "find", "bing", "youtube", "play"}
+            query_words = [w for w in text.split() if w not in search_verbs and w not in noise]
+            entities["query"] = " ".join(query_words)
+            if intent == "search_web":
+                entities["engine"] = "google"
+
+        elif intent == "volume_control":
+            raw_lower = text.lower()
+            if any(w in raw_lower for w in ("increase", "raise", "up", "louder", "higher")):
+                entities["action"] = "increase"
+            elif any(w in raw_lower for w in ("decrease", "lower", "down", "softer", "quieter", "reduce")):
+                entities["action"] = "decrease"
+            elif "mute" in raw_lower and "unmute" not in raw_lower:
+                entities["action"] = "mute"
+            elif "unmute" in raw_lower:
+                entities["action"] = "unmute"
+            else:
+                entities["action"] = "set"
+            num_match = re.search(r"(\d+)", raw_lower)
+            entities["level"] = int(num_match.group(1)) if num_match else None
+
+        else:
+            entities["raw"] = text
+
+        return entities
 
     def _parse_with_fallback(self, text: str) -> dict:
         parsed = self.parse(text)

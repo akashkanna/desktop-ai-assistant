@@ -501,5 +501,4 @@ class PremiumSidebar(QFrame):
     
     def set_assistant_status(self, online: bool, label: str = ""):
         """Set overall assistant status (shown in status panel if needed)."""
-        # Could add an overall status indicator here
-        pass
+        self.set_indicator_status("ai_core", online)

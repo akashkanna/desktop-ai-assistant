@@ -1,0 +1,15 @@
+{
+  "camera_index": 0,
+  "camera_width": 640,
+  "camera_height": 480,
+  "cursor_sensitivity": 2.0,
+  "cursor_smoothing": 0.35,
+  "edge_margin": 15,
+  "scroll_sensitivity": 1.5,
+  "scroll_smoothing": 0.25,
+  "min_gesture_confidence": 0.75,
+  "gesture_cooldown": 0.6,
+  "pinch_click_threshold": 0.045,
+  "double_pinch_window": 0.45,
+  "activation_hold_duration": 2.0
+}
